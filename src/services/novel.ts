@@ -1,0 +1,181 @@
+import type {
+  ApiCatalogResponse,
+  ApiChapterResponse,
+  ApiSearchResponse,
+  Book,
+  Catalog,
+  ChapterContent,
+  SearchGroup
+} from '@/types/novel'
+
+const API_BASE = String(import.meta.env.VITE_API_BASE_URL || '').replace(/\/+$/, '')
+const DEMO_CHAPTER_COUNT = 36
+
+const demoBooks: Book[] = [
+  createDemoBook('perfect-world', '完美世界', '辰东', '一粒尘可填海，一根草斩尽日月星辰。'),
+  createDemoBook('coiling-dragon', '盘龙', '我吃西红柿', '大小的血睛鬃毛狮，毁天灭地的九头蛇。'),
+  createDemoBook('breaking-sky', '斗破苍穹', '天蚕土豆', '这里是属于斗气的世界。'),
+  createDemoBook('perfect-world-light', '完美世界之光明仙帝', '星海游吟', '少年徐钰进入逐鹿书院。'),
+  createDemoBook('from-perfect-world', '从完美世界开始', '心意难平', '带着系统穿越到完美世界。')
+]
+
+function createDemoBook(id: string, title: string, author: string, intro: string): Book {
+  return {
+    id,
+    title,
+    author,
+    intro,
+    source: 'demo',
+    sourceLabel: '演示站点',
+    coverUrl: '',
+    catalogUrl: `mock://${id}`,
+    readUrl: `mock://${id}/1`
+  }
+}
+
+function delay(milliseconds = 220) {
+  return new Promise((resolve) => setTimeout(resolve, milliseconds))
+}
+
+function normalizeTitle(value: string) {
+  return value
+    .normalize('NFKC')
+    .toLocaleLowerCase('zh-CN')
+    .replace(/[\s\p{P}\p{S}]+/gu, '')
+}
+
+function relevanceScore(title: string, query: string) {
+  const normalizedTitle = normalizeTitle(title)
+  const normalizedQuery = normalizeTitle(query)
+
+  if (normalizedTitle === normalizedQuery) {
+    return 1000
+  }
+  if (normalizedTitle.startsWith(normalizedQuery)) {
+    return 800 - Math.abs(normalizedTitle.length - normalizedQuery.length)
+  }
+  if (normalizedTitle.includes(normalizedQuery)) {
+    return 600 - Math.abs(normalizedTitle.length - normalizedQuery.length)
+  }
+  return 0
+}
+
+async function request<T>(path: string, data?: Record<string, string | number>) {
+  return new Promise<T>((resolve, reject) => {
+    uni.request({
+      url: `${API_BASE}${path}`,
+      data,
+      method: 'GET',
+      timeout: 30000,
+      success(response) {
+        if (response.statusCode >= 200 && response.statusCode < 300) {
+          resolve(response.data as T)
+          return
+        }
+
+        const body = response.data as { error?: string } | string | undefined
+        const message = typeof body === 'object' && body?.error
+          ? body.error
+          : `接口请求失败：${response.statusCode}`
+        reject(new Error(message))
+      },
+      fail(error) {
+        reject(new Error(error.errMsg || '网络请求失败'))
+      }
+    })
+  })
+}
+
+export async function searchBooks(query: string): Promise<SearchGroup[]> {
+  const value = query.trim()
+  if (!value) {
+    return []
+  }
+
+  if (!API_BASE) {
+    await delay()
+    const normalizedQuery = normalizeTitle(value)
+    const items = demoBooks
+      .filter((book) => normalizeTitle(`${book.title}${book.author}`).includes(normalizedQuery))
+      .sort((left, right) => relevanceScore(right.title, value) - relevanceScore(left.title, value))
+    return [{
+      source: 'demo',
+      label: '演示站点',
+      count: items.length,
+      error: '',
+      items
+    }]
+  }
+
+  const response = await request<ApiSearchResponse>('/api/search', { q: value })
+  const items = response.items || []
+  return (response.groups || []).map((group) => {
+    const groupItems = items
+      .filter((item) => item.source === group.source)
+      .sort((left, right) => relevanceScore(right.title, value) - relevanceScore(left.title, value))
+    return {
+      source: group.source,
+      label: group.label,
+      count: groupItems.length,
+      error: group.error || '',
+      items: groupItems
+    }
+  })
+}
+
+export async function getCatalog(catalogUrl: string): Promise<Catalog> {
+  if (!API_BASE || catalogUrl.startsWith('mock://')) {
+    await delay(160)
+    const demoId = catalogUrl.replace(/^mock:\/\//, '').split('/')[0]
+    const book = demoBooks.find((item) => item.id === demoId) || demoBooks[0]
+    return {
+      book,
+      chapters: Array.from({ length: DEMO_CHAPTER_COUNT }, (_, index) => {
+        const id = index + 1
+        return {
+          id,
+          title: `第${id}章 ${id === 1 ? '故事开始' : `新的篇章 ${id}`}`,
+          url: `mock://${book.id}/${id}`
+        }
+      })
+    }
+  }
+
+  const response = await request<ApiCatalogResponse>('/api/catalog', { url: catalogUrl })
+  return {
+    book: response.book,
+    chapters: response.chapters || []
+  }
+}
+
+export async function getChapter(chapterUrl: string): Promise<ChapterContent> {
+  if (!API_BASE || chapterUrl.startsWith('mock://')) {
+    await delay(140)
+    const match = chapterUrl.match(/^mock:\/\/([^/]+)\/(\d+)$/)
+    const demoId = match?.[1] || demoBooks[0].id
+    const id = Number(match?.[2] || 1)
+    const catalog = await getCatalog(`mock://${demoId}`)
+    const selected = catalog.chapters.find((item) => item.id === id) || catalog.chapters[0]
+    const paragraphs = [
+      '夜色从山脊缓慢落下，远处的灯火像散在纸上的金色墨点。',
+      '少年合上手中的旧书，听见风穿过长廊，也听见更远处隐约传来的钟声。',
+      '他知道，真正漫长的旅程还没有开始。那些尚未写下的故事，正在云层之后等待。',
+      '当第一缕晨光越过城墙，所有沉默的道路都同时有了方向。',
+      '这是本地演示正文。启动 Node.js 后端后，会自动切换为真实章节内容。'
+    ]
+    return {
+      id: selected.id,
+      title: selected.title,
+      content: paragraphs.join('\n\n'),
+      source: 'demo',
+      sourceLabel: '演示站点',
+      chapterUrl: selected.url,
+      catalogUrl: catalog.book.catalogUrl,
+      prevUrl: selected.id > 1 ? `mock://${demoId}/${selected.id - 1}` : '',
+      nextUrl: selected.id < DEMO_CHAPTER_COUNT ? `mock://${demoId}/${selected.id + 1}` : ''
+    }
+  }
+
+  const response = await request<ApiChapterResponse>('/api/chapter', { url: chapterUrl })
+  return response
+}
