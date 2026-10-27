@@ -2,6 +2,8 @@
 
 基于 uni-app、Vue 3、TypeScript 和 Vite 的微信小程序项目。
 
+账号注册后默认没有访问权限，需要在管理后台由管理员开通。
+
 ## 启动
 
 ```powershell
@@ -26,4 +28,6 @@ npm run dev:h5
 | 章节目录 | `pages/catalog/catalog` |
 | 小说阅读 | `pages/reader/reader` |
 | 历史记录 | `pages/history/history` |
+| 登录注册 | `pages/login/login` |
+| 我的账号 | `pages/profile/profile` |
 

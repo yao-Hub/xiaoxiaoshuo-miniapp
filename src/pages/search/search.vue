@@ -1,8 +1,9 @@
 <script setup lang="ts">
 import { computed, reactive, ref } from 'vue'
 import { onLoad } from '@dcloudio/uni-app'
-import { searchBooks } from '@/services/novel'
+import { ApiRequestError, searchBooks } from '@/services/novel'
 import { addSearchHistory } from '@/utils/storage'
+import { getAuthToken, openLoginPage, openProtectedPage } from '@/services/auth'
 import type { Book, SearchGroup } from '@/types/novel'
 
 const query = ref('')
@@ -28,6 +29,11 @@ async function runSearch(value = query.value) {
   if (!next) {
     return
   }
+  if (!getAuthToken()) {
+    promptSearchLogin(next)
+    return
+  }
+
   query.value = next
   loading.value = true
   errorMessage.value = ''
@@ -36,16 +42,37 @@ async function runSearch(value = query.value) {
   try {
     groups.value = await searchBooks(next)
   } catch (error) {
+    if (error instanceof ApiRequestError && error.statusCode === 401) {
+      groups.value = []
+      loading.value = false
+      promptSearchLogin(next)
+      return
+    }
     errorMessage.value = error instanceof Error ? error.message : String(error)
   } finally {
     loading.value = false
   }
 }
 
-function openCatalog(book: Book) {
-  uni.navigateTo({
-    url: `/pages/catalog/catalog?url=${encodeURIComponent(book.catalogUrl)}&title=${encodeURIComponent(book.title)}`
+function promptSearchLogin(value: string) {
+  const target = `/pages/search/search?q=${encodeURIComponent(value)}`
+  uni.showModal({
+    title: '请先登录',
+    content: '登录后可以搜索书名。',
+    confirmText: '去登录',
+    cancelText: '取消',
+    success(result) {
+      if (result.confirm) {
+        openLoginPage(target)
+      }
+    }
   })
+}
+
+function openCatalog(book: Book) {
+  openProtectedPage(
+    `/pages/catalog/catalog?url=${encodeURIComponent(book.catalogUrl)}&title=${encodeURIComponent(book.title)}`
+  )
 }
 
 function openReader(book: Book) {
@@ -59,9 +86,9 @@ function openReader(book: Book) {
     return
   }
 
-  uni.navigateTo({
-    url: `/pages/reader/reader?chapterUrl=${encodeURIComponent(book.readUrl)}&catalogUrl=${encodeURIComponent(book.catalogUrl)}&bookTitle=${encodeURIComponent(book.title)}`
-  })
+  openProtectedPage(
+    `/pages/reader/reader?chapterUrl=${encodeURIComponent(book.readUrl)}&catalogUrl=${encodeURIComponent(book.catalogUrl)}&bookTitle=${encodeURIComponent(book.title)}`
+  )
 }
 
 function markCoverFailed(book: Book) {

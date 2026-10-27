@@ -3,6 +3,7 @@ import { ref } from 'vue'
 import { onShow } from '@dcloudio/uni-app'
 import { getReadingHistory, getSearchHistory, removeSearchHistory } from '@/utils/storage'
 import { syncTabBar } from '@/utils/tabbar'
+import { getAuthToken, openLoginPage, openProtectedPage } from '@/services/auth'
 import type { ReadingHistoryItem } from '@/types/novel'
 
 const query = ref('')
@@ -23,15 +24,30 @@ function openSearch(value = query.value) {
     uni.showToast({ title: '请输入书名', icon: 'none' })
     return
   }
+  if (!getAuthToken()) {
+    const target = `/pages/search/search?q=${encodeURIComponent(next)}`
+    uni.showModal({
+      title: '请先登录',
+      content: '登录后可以搜索书名。',
+      confirmText: '去登录',
+      cancelText: '取消',
+      success(result) {
+        if (result.confirm) {
+          openLoginPage(target)
+        }
+      }
+    })
+    return
+  }
   uni.navigateTo({
     url: `/pages/search/search?q=${encodeURIComponent(next)}`
   })
 }
 
 function continueReading(item: ReadingHistoryItem) {
-  uni.navigateTo({
-    url: `/pages/reader/reader?chapterUrl=${encodeURIComponent(item.chapterUrl)}&catalogUrl=${encodeURIComponent(item.catalogUrl)}&bookTitle=${encodeURIComponent(item.bookTitle)}`
-  })
+  openProtectedPage(
+    `/pages/reader/reader?chapterUrl=${encodeURIComponent(item.chapterUrl)}&catalogUrl=${encodeURIComponent(item.catalogUrl)}&bookTitle=${encodeURIComponent(item.bookTitle)}`
+  )
 }
 
 function openHistory() {

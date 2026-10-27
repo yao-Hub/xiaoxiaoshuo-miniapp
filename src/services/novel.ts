@@ -7,9 +7,23 @@ import type {
   ChapterContent,
   SearchGroup
 } from '@/types/novel'
+import {
+  clearAuthSession,
+  CONTENT_UNAVAILABLE_MESSAGE,
+  getAuthToken
+} from '@/services/auth'
 
 const API_BASE = String(import.meta.env.VITE_API_BASE_URL || '').replace(/\/+$/, '')
 const DEMO_CHAPTER_COUNT = 36
+
+export class ApiRequestError extends Error {
+  constructor(
+    message: string,
+    readonly statusCode: number
+  ) {
+    super(message)
+  }
+}
 
 const demoBooks: Book[] = [
   createDemoBook('perfect-world', '完美世界', '辰东', '一粒尘可填海，一根草斩尽日月星辰。'),
@@ -66,6 +80,7 @@ async function request<T>(path: string, data?: Record<string, string | number>) 
       url: `${API_BASE}${path}`,
       data,
       method: 'GET',
+      header: getAuthToken() ? { Authorization: `Bearer ${getAuthToken()}` } : {},
       timeout: 30000,
       success(response) {
         if (response.statusCode >= 200 && response.statusCode < 300) {
@@ -77,10 +92,16 @@ async function request<T>(path: string, data?: Record<string, string | number>) 
         const message = typeof body === 'object' && body?.error
           ? body.error
           : `接口请求失败：${response.statusCode}`
-        reject(new Error(message))
+        if (response.statusCode === 401) {
+          clearAuthSession()
+        }
+        reject(new ApiRequestError(
+          response.statusCode === 403 ? CONTENT_UNAVAILABLE_MESSAGE : message,
+          response.statusCode
+        ))
       },
       fail(error) {
-        reject(new Error(error.errMsg || '网络请求失败'))
+        reject(new ApiRequestError(error.errMsg || '网络请求失败', 0))
       }
     })
   })
