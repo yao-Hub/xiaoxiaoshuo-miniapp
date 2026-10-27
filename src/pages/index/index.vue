@@ -64,7 +64,7 @@ function deleteRecentSearch(query: string) {
   <view class="page home-page">
     <view class="hero">
       <view class="eyebrow">CROSS-SITE READING</view>
-      <view class="brand">小小小说</view>
+      <view class="brand">西瓜啃书</view>
       <view class="slogan">输入书名，穿过站点边界，找到想读的故事。</view>
     </view>
 

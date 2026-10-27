@@ -18,10 +18,10 @@ const errorMessage = ref('')
 
 const accessText = computed(() => {
   if (!user.value?.accessEnabled) {
-    return '功能暂不可用'
+    return ''
   }
   if (user.value.accessExpiresAt && Date.parse(user.value.accessExpiresAt) <= Date.now()) {
-    return '功能暂不可用'
+    return ''
   }
   return '功能正常'
 })
@@ -61,8 +61,8 @@ function openLogin() {
       <view class="avatar">{{ user?.username?.slice(0, 1) || '西' }}</view>
       <view>
         <view class="username">{{ loggedIn ? user?.username || '加载中' : '未登录' }}</view>
-        <view class="status" :class="{ active: user?.accessEnabled }">
-          {{ loggedIn ? accessText : '登录后查看账号权限' }}
+        <view v-if="!loggedIn || accessText" class="status" :class="{ active: user?.accessEnabled }">
+          {{ loggedIn ? accessText : '登录以获取更多权限' }}
         </view>
       </view>
     </view>
