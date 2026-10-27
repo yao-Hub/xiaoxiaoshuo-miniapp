@@ -1,0 +1,20 @@
+{
+  "name": "小小小说",
+  "appid": "__UNI__XIAOXIAOSHUO",
+  "description": "跨站搜索书名或地址，在移动端阅读小说。",
+  "versionName": "0.1.0",
+  "versionCode": "100",
+  "transformPx": false,
+  "h5": {
+    "title": "小小小说"
+  },
+  "mp-weixin": {
+    "appid": "wxd5bf129c25b9f9c7",
+    "setting": {
+      "urlCheck": false,
+      "es6": true,
+      "minified": true
+    },
+    "usingComponents": true
+  }
+}
