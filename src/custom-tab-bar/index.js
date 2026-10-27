@@ -11,6 +11,10 @@ Component({
       {
         pagePath: '/pages/history/history',
         text: '历史'
+      },
+      {
+        pagePath: '/pages/profile/profile',
+        text: '我的'
       }
     ]
   },

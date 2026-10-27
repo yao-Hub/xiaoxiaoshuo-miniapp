@@ -31,6 +31,18 @@
       "style": {
         "navigationBarTitleText": "历史"
       }
+    },
+    {
+      "path": "pages/profile/profile",
+      "style": {
+        "navigationBarTitleText": "我的账号"
+      }
+    },
+    {
+      "path": "pages/login/login",
+      "style": {
+        "navigationBarTitleText": "登录"
+      }
     }
   ],
   "globalStyle": {
@@ -53,6 +65,10 @@
       {
         "pagePath": "pages/history/history",
         "text": "历史"
+      },
+      {
+        "pagePath": "pages/profile/profile",
+        "text": "我的"
       }
     ]
   }

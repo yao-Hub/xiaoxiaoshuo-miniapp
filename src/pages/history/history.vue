@@ -11,6 +11,7 @@ import {
 } from '@/utils/storage'
 import type { ReadingHistoryItem } from '@/types/novel'
 import { syncTabBar } from '@/utils/tabbar'
+import { openProtectedPage } from '@/services/auth'
 
 const activeTab = ref<'reading' | 'search'>('reading')
 const readingHistory = ref<ReadingHistoryItem[]>([])
@@ -27,9 +28,9 @@ function refresh() {
 }
 
 function openReading(item: ReadingHistoryItem) {
-  uni.navigateTo({
-    url: `/pages/reader/reader?chapterUrl=${encodeURIComponent(item.chapterUrl)}&catalogUrl=${encodeURIComponent(item.catalogUrl)}&bookTitle=${encodeURIComponent(item.bookTitle)}`
-  })
+  openProtectedPage(
+    `/pages/reader/reader?chapterUrl=${encodeURIComponent(item.chapterUrl)}&catalogUrl=${encodeURIComponent(item.catalogUrl)}&bookTitle=${encodeURIComponent(item.bookTitle)}`
+  )
 }
 
 function openSearch(query: string) {
