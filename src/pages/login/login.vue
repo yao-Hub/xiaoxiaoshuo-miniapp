@@ -7,6 +7,8 @@ const mode = ref<'login' | 'register'>('login')
 const loading = ref(false)
 const errorMessage = ref('')
 const redirectUrl = ref('')
+const showPassword = ref(false)
+const showConfirmPassword = ref(false)
 const form = reactive({
   username: '',
   password: '',
@@ -68,8 +70,8 @@ function toggleMode() {
 <template>
   <view class="login-page">
     <view class="login-card">
-      <view class="eyebrow">XIAOXIAOSHUO</view>
-      <view class="title">西瓜伴读</view>
+      <view class="eyebrow">XIGUA KENSHU</view>
+      <view class="title">西瓜啃书</view>
       <view class="subtitle">
         {{ mode === 'login' ? '登录你的账号' : '注册一个新账号' }}
       </view>
@@ -82,23 +84,46 @@ function toggleMode() {
           placeholder-class="placeholder"
           maxlength="24"
         />
-        <input
-          v-model="form.password"
-          class="input"
-          password
-          placeholder="密码，至少 8 位"
-          placeholder-class="placeholder"
-          maxlength="72"
-        />
-        <input
-          v-if="mode === 'register'"
-          v-model="form.confirmPassword"
-          class="input"
-          password
-          placeholder="再次输入密码"
-          placeholder-class="placeholder"
-          maxlength="72"
-        />
+        <view class="password-field">
+          <input
+            v-model="form.password"
+            class="input password-input"
+            :password="!showPassword"
+            placeholder="密码，至少 8 位"
+            placeholder-class="placeholder"
+            maxlength="72"
+          />
+          <button
+            class="password-toggle"
+            :aria-label="showPassword ? '隐藏密码' : '显示密码'"
+            @tap="showPassword = !showPassword"
+          >
+            <view class="eye-icon" :class="{ 'is-visible': showPassword }">
+              <view class="eye-pupil" />
+              <view v-if="showPassword" class="eye-slash" />
+            </view>
+          </button>
+        </view>
+        <view v-if="mode === 'register'" class="password-field">
+          <input
+            v-model="form.confirmPassword"
+            class="input password-input"
+            :password="!showConfirmPassword"
+            placeholder="再次输入密码"
+            placeholder-class="placeholder"
+            maxlength="72"
+          />
+          <button
+            class="password-toggle"
+            :aria-label="showConfirmPassword ? '隐藏密码' : '显示密码'"
+            @tap="showConfirmPassword = !showConfirmPassword"
+          >
+            <view class="eye-icon" :class="{ 'is-visible': showConfirmPassword }">
+              <view class="eye-pupil" />
+              <view v-if="showConfirmPassword" class="eye-slash" />
+            </view>
+          </button>
+        </view>
       </view>
 
       <view v-if="errorMessage" class="error">{{ errorMessage }}</view>
@@ -167,6 +192,63 @@ function toggleMode() {
   border: 1rpx solid var(--line);
   border-radius: 16rpx;
   font-size: 30rpx;
+}
+
+.password-field {
+  position: relative;
+  margin-bottom: 22rpx;
+}
+
+.password-input {
+  margin-bottom: 0;
+  padding-right: 108rpx;
+}
+
+.password-toggle {
+  position: absolute;
+  top: 0;
+  right: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 96rpx;
+  height: 92rpx;
+  margin: 0;
+  padding: 0;
+  background: transparent;
+  border: 0;
+  border-radius: 0 16rpx 16rpx 0;
+}
+
+.password-toggle::after {
+  border: 0;
+}
+
+.eye-icon {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 40rpx;
+  height: 26rpx;
+  border: 3rpx solid var(--gold);
+  border-radius: 50%;
+}
+
+.eye-pupil {
+  width: 12rpx;
+  height: 12rpx;
+  background: var(--gold);
+  border-radius: 50%;
+}
+
+.eye-slash {
+  position: absolute;
+  width: 50rpx;
+  height: 3rpx;
+  background: var(--gold);
+  border-radius: 999rpx;
+  transform: rotate(-42deg);
 }
 
 .placeholder {

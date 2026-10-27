@@ -1,4 +1,4 @@
-# 小小小说
+# 西瓜啃书
 
 基于 uni-app、Vue 3、TypeScript 和 Vite 的微信小程序项目。
 

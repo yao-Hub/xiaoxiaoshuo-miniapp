@@ -1,7 +1,7 @@
 <script lang="ts">
 export default {
   onLaunch() {
-    console.info('小小小说启动')
+    console.info('西瓜啃书启动')
   }
 }
 </script>
