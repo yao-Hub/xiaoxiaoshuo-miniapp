@@ -17,10 +17,9 @@ page {
   --danger: #e75d52;
   min-height: 100%;
   color: var(--ink);
-  background:
-    radial-gradient(circle at 90% 0%, rgba(245, 200, 76, 0.13), transparent 34%),
-    #12110f;
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+  background: radial-gradient(circle at 90% 0%, rgba(245, 200, 76, 0.13), transparent 34%), #12110f;
+  font-family:
+    -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif;
   font-size: 15px;
   font-weight: 400;
   text-rendering: optimizeLegibility;

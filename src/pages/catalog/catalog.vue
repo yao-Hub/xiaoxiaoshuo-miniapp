@@ -107,9 +107,7 @@ function openChapter(chapter: Chapter) {
   width: 132rpx;
   height: 174rpx;
   color: #17130a;
-  background:
-    linear-gradient(135deg, rgba(255, 255, 255, 0.34), transparent 45%),
-    var(--gold);
+  background: linear-gradient(135deg, rgba(255, 255, 255, 0.34), transparent 45%), var(--gold);
   border-radius: 12rpx 20rpx 20rpx 12rpx;
   box-shadow: 8rpx 10rpx 0 #4b3d18;
   font-size: 64rpx;

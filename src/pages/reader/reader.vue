@@ -99,19 +99,11 @@ function changeFont(delta: number) {
       </view>
 
       <view class="chapter-navigation">
-        <button
-          class="nav-button"
-          :disabled="!chapter.prevUrl"
-          @tap="loadChapter(chapter.prevUrl)"
-        >
+        <button class="nav-button" :disabled="!chapter.prevUrl" @tap="loadChapter(chapter.prevUrl)">
           上一章
         </button>
         <button class="nav-button catalog-button" @tap="openCatalog">目录</button>
-        <button
-          class="nav-button"
-          :disabled="!chapter.nextUrl"
-          @tap="loadChapter(chapter.nextUrl)"
-        >
+        <button class="nav-button" :disabled="!chapter.nextUrl" @tap="loadChapter(chapter.nextUrl)">
           下一章
         </button>
       </view>
