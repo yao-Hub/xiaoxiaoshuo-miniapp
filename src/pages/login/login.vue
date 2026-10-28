@@ -37,11 +37,10 @@ async function submit() {
 
   loading.value = true
   try {
-    let user
     if (mode.value === 'register') {
-      user = await register(username, form.password)
+      await register(username, form.password)
     } else {
-      user = await login(username, form.password)
+      await login(username, form.password)
     }
 
     if (redirectUrl.value) {
@@ -133,9 +132,7 @@ function toggleMode() {
       <button class="switch-mode" @tap="toggleMode">
         {{ mode === 'login' ? '没有账号？注册' : '已有账号？登录' }}
       </button>
-      <view v-if="mode === 'register'" class="hint">
-        注册后即可登录并使用搜索功能。
-      </view>
+      <view v-if="mode === 'register'" class="hint"> 注册后即可登录并使用搜索功能。 </view>
     </view>
   </view>
 </template>
@@ -146,8 +143,7 @@ function toggleMode() {
   min-height: 100vh;
   padding: 40rpx 30rpx;
   background:
-    radial-gradient(circle at 80% 0%, rgba(245, 200, 76, 0.16), transparent 36%),
-    var(--bg);
+    radial-gradient(circle at 80% 0%, rgba(245, 200, 76, 0.16), transparent 36%), var(--bg);
   place-items: center;
 }
 

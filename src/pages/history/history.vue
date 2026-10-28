@@ -102,18 +102,10 @@ function formatTime(timestamp: number) {
     </view>
 
     <view class="tabs card">
-      <button
-        class="tab"
-        :class="{ active: activeTab === 'reading' }"
-        @tap="activeTab = 'reading'"
-      >
+      <button class="tab" :class="{ active: activeTab === 'reading' }" @tap="activeTab = 'reading'">
         阅读历史
       </button>
-      <button
-        class="tab"
-        :class="{ active: activeTab === 'search' }"
-        @tap="activeTab = 'search'"
-      >
+      <button class="tab" :class="{ active: activeTab === 'search' }" @tap="activeTab = 'search'">
         搜索历史
       </button>
     </view>

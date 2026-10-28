@@ -1,6 +1,6 @@
 {
   "name": "xiaoxiaoshuo-miniapp",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "private": true,
   "type": "module",
   "scripts": {
@@ -8,7 +8,12 @@
     "dev:mp-weixin": "uni -p mp-weixin",
     "build:h5": "uni build -p h5",
     "build:mp-weixin": "uni build -p mp-weixin",
-    "type-check": "vue-tsc --noEmit"
+    "type-check": "vue-tsc --noEmit",
+    "lint": "eslint .",
+    "test": "vitest run --config scripts/vitest.config.ts",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "check": "npm run lint && npm run type-check && npm run test"
   },
   "dependencies": {
     "@dcloudio/uni-app": "3.0.0-5030320261023001",
@@ -20,11 +25,18 @@
   "devDependencies": {
     "@dcloudio/types": "3.4.31",
     "@dcloudio/vite-plugin-uni": "3.0.0-5030320261023001",
+    "@eslint/js": "^10.0.1",
     "@types/node": "^22.10.0",
     "@vue/compiler-sfc": "3.4.21",
     "@vue/runtime-core": "3.4.21",
+    "eslint": "^10.13.0",
+    "eslint-plugin-vue": "^10.12.0",
+    "globals": "^17.13.0",
+    "prettier": "^3.9.10",
     "typescript": "^5.6.3",
+    "typescript-eslint": "^8.72.1",
     "vite": "5.2.8",
+    "vitest": "^1.6.1",
     "vue-tsc": "^2.1.10"
   }
 }

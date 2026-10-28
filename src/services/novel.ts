@@ -7,23 +7,12 @@ import type {
   ChapterContent,
   SearchGroup
 } from '@/types/novel'
-import {
-  clearAuthSession,
-  CONTENT_UNAVAILABLE_MESSAGE,
-  getAuthToken
-} from '@/services/auth'
+import { clearAuthSession, getAuthToken } from '@/services/auth'
+import { CONTENT_UNAVAILABLE_MESSAGE } from '@/constants/messages'
+import { hasConfiguredApi, requestJson } from '@/services/http'
+import { normalizeTitle, relevanceScore } from '@/utils/search'
 
-const API_BASE = String(import.meta.env.VITE_API_BASE_URL || '').replace(/\/+$/, '')
 const DEMO_CHAPTER_COUNT = 36
-
-export class ApiRequestError extends Error {
-  constructor(
-    message: string,
-    readonly statusCode: number
-  ) {
-    super(message)
-  }
-}
 
 const demoBooks: Book[] = [
   createDemoBook('perfect-world', '完美世界', '辰东', '一粒尘可填海，一根草斩尽日月星辰。'),
@@ -51,59 +40,17 @@ function delay(milliseconds = 220) {
   return new Promise((resolve) => setTimeout(resolve, milliseconds))
 }
 
-function normalizeTitle(value: string) {
-  return value
-    .normalize('NFKC')
-    .toLocaleLowerCase('zh-CN')
-    .replace(/[\s\p{P}\p{S}]+/gu, '')
-}
-
-function relevanceScore(title: string, query: string) {
-  const normalizedTitle = normalizeTitle(title)
-  const normalizedQuery = normalizeTitle(query)
-
-  if (normalizedTitle === normalizedQuery) {
-    return 1000
-  }
-  if (normalizedTitle.startsWith(normalizedQuery)) {
-    return 800 - Math.abs(normalizedTitle.length - normalizedQuery.length)
-  }
-  if (normalizedTitle.includes(normalizedQuery)) {
-    return 600 - Math.abs(normalizedTitle.length - normalizedQuery.length)
-  }
-  return 0
-}
-
-async function request<T>(path: string, data?: Record<string, string | number>) {
-  return new Promise<T>((resolve, reject) => {
-    uni.request({
-      url: `${API_BASE}${path}`,
-      data,
-      method: 'GET',
-      header: getAuthToken() ? { Authorization: `Bearer ${getAuthToken()}` } : {},
-      timeout: 30000,
-      success(response) {
-        if (response.statusCode >= 200 && response.statusCode < 300) {
-          resolve(response.data as T)
-          return
-        }
-
-        const body = response.data as { error?: string } | string | undefined
-        const message = typeof body === 'object' && body?.error
-          ? body.error
-          : `接口请求失败：${response.statusCode}`
-        if (response.statusCode === 401) {
-          clearAuthSession()
-        }
-        reject(new ApiRequestError(
-          response.statusCode === 403 ? CONTENT_UNAVAILABLE_MESSAGE : message,
-          response.statusCode
-        ))
-      },
-      fail(error) {
-        reject(new ApiRequestError(error.errMsg || '网络请求失败', 0))
-      }
-    })
+async function request<T>(
+  path: string,
+  data?: Record<string, string | number>,
+  forbiddenMessage?: string
+) {
+  return requestJson<T>(path, {
+    data,
+    token: getAuthToken(),
+    timeout: 30000,
+    forbiddenMessage,
+    onUnauthorized: clearAuthSession
   })
 }
 
@@ -113,19 +60,21 @@ export async function searchBooks(query: string): Promise<SearchGroup[]> {
     return []
   }
 
-  if (!API_BASE) {
+  if (!hasConfiguredApi()) {
     await delay()
     const normalizedQuery = normalizeTitle(value)
     const items = demoBooks
       .filter((book) => normalizeTitle(`${book.title}${book.author}`).includes(normalizedQuery))
       .sort((left, right) => relevanceScore(right.title, value) - relevanceScore(left.title, value))
-    return [{
-      source: 'demo',
-      label: '演示站点',
-      count: items.length,
-      error: '',
-      items
-    }]
+    return [
+      {
+        source: 'demo',
+        label: '演示站点',
+        count: items.length,
+        error: '',
+        items
+      }
+    ]
   }
 
   const response = await request<ApiSearchResponse>('/api/search', { q: value })
@@ -145,7 +94,7 @@ export async function searchBooks(query: string): Promise<SearchGroup[]> {
 }
 
 export async function getCatalog(catalogUrl: string): Promise<Catalog> {
-  if (!API_BASE || catalogUrl.startsWith('mock://')) {
+  if (!hasConfiguredApi() || catalogUrl.startsWith('mock://')) {
     await delay(160)
     const demoId = catalogUrl.replace(/^mock:\/\//, '').split('/')[0]
     const book = demoBooks.find((item) => item.id === demoId) || demoBooks[0]
@@ -162,7 +111,11 @@ export async function getCatalog(catalogUrl: string): Promise<Catalog> {
     }
   }
 
-  const response = await request<ApiCatalogResponse>('/api/catalog', { url: catalogUrl })
+  const response = await request<ApiCatalogResponse>(
+    '/api/catalog',
+    { url: catalogUrl },
+    CONTENT_UNAVAILABLE_MESSAGE
+  )
   return {
     book: response.book,
     chapters: response.chapters || []
@@ -170,7 +123,7 @@ export async function getCatalog(catalogUrl: string): Promise<Catalog> {
 }
 
 export async function getChapter(chapterUrl: string): Promise<ChapterContent> {
-  if (!API_BASE || chapterUrl.startsWith('mock://')) {
+  if (!hasConfiguredApi() || chapterUrl.startsWith('mock://')) {
     await delay(140)
     const match = chapterUrl.match(/^mock:\/\/([^/]+)\/(\d+)$/)
     const demoId = match?.[1] || demoBooks[0].id
@@ -197,6 +150,10 @@ export async function getChapter(chapterUrl: string): Promise<ChapterContent> {
     }
   }
 
-  const response = await request<ApiChapterResponse>('/api/chapter', { url: chapterUrl })
+  const response = await request<ApiChapterResponse>(
+    '/api/chapter',
+    { url: chapterUrl },
+    CONTENT_UNAVAILABLE_MESSAGE
+  )
   return response
 }

@@ -1,9 +1,13 @@
+import { CONTENT_UNAVAILABLE_MESSAGE } from '@/constants/messages'
+import { requestJson } from '@/services/http'
+
+export { CONTENT_UNAVAILABLE_MESSAGE } from '@/constants/messages'
+
 const TOKEN_KEY = 'xiaoxiaoshuo.authToken'
-const API_BASE = String(import.meta.env.VITE_API_BASE_URL || '').replace(/\/+$/, '')
-export const CONTENT_UNAVAILABLE_MESSAGE = '内容暂不可用'
 
 export interface SessionUser {
-  id: number
+  id: string
+  publicId: string
   username: string
   accessEnabled: boolean
   accessExpiresAt: string | null
@@ -17,32 +21,6 @@ interface AuthResponse {
   user: SessionUser
 }
 
-async function authRequest<T>(path: string, data?: Record<string, string>) {
-  return new Promise<T>((resolve, reject) => {
-    uni.request({
-      url: `${API_BASE}${path}`,
-      method: data ? 'POST' : 'GET',
-      data,
-      header: {
-        'content-type': 'application/json',
-        ...(getAuthToken() ? { Authorization: `Bearer ${getAuthToken()}` } : {})
-      },
-      timeout: 20000,
-      success(response) {
-        if (response.statusCode >= 200 && response.statusCode < 300) {
-          resolve(response.data as T)
-          return
-        }
-        const body = response.data as { error?: string } | undefined
-        reject(new Error(body?.error || `请求失败：${response.statusCode}`))
-      },
-      fail(error) {
-        reject(new Error(error.errMsg || '网络请求失败'))
-      }
-    })
-  })
-}
-
 export function getAuthToken() {
   return String(uni.getStorageSync(TOKEN_KEY) || '')
 }
@@ -54,7 +32,7 @@ export function setAuthSession(result: AuthResponse) {
 
 export function getCachedUser(): SessionUser | undefined {
   const value = uni.getStorageSync('xiaoxiaoshuo.currentUser')
-  return value && typeof value === 'object' ? value as SessionUser : undefined
+  return value && typeof value === 'object' ? (value as SessionUser) : undefined
 }
 
 export function clearAuthSession() {
@@ -76,7 +54,7 @@ export function openLoginPage(redirectUrl = '') {
   uni.navigateTo({ url: `/pages/login/login${query}` })
 }
 
-export function openProtectedPage(url: string) {
+export async function openProtectedPage(url: string) {
   if (!getAuthToken()) {
     uni.showModal({
       title: '请先登录',
@@ -93,28 +71,52 @@ export function openProtectedPage(url: string) {
   }
 
   const user = getCachedUser()
-  if (user && !hasActiveAccess(user)) {
-    uni.showToast({ title: CONTENT_UNAVAILABLE_MESSAGE, icon: 'none' })
+  if (user && hasActiveAccess(user)) {
+    uni.navigateTo({ url })
     return
   }
 
-  uni.navigateTo({ url })
+  try {
+    const currentUser = await getCurrentUser()
+    if (!hasActiveAccess(currentUser)) {
+      uni.showToast({ title: CONTENT_UNAVAILABLE_MESSAGE, icon: 'none' })
+      return
+    }
+    uni.navigateTo({ url })
+  } catch (error) {
+    uni.showToast({
+      title: error instanceof Error ? error.message : CONTENT_UNAVAILABLE_MESSAGE,
+      icon: 'none'
+    })
+  }
 }
 
 export async function login(username: string, password: string) {
-  const result = await authRequest<AuthResponse>('/api/auth/login', { username, password })
+  const result = await requestJson<AuthResponse>('/api/auth/login', {
+    method: 'POST',
+    data: { username, password },
+    timeout: 20000
+  })
   setAuthSession(result)
   return result.user
 }
 
 export async function register(username: string, password: string) {
-  const result = await authRequest<AuthResponse>('/api/auth/register', { username, password })
+  const result = await requestJson<AuthResponse>('/api/auth/register', {
+    method: 'POST',
+    data: { username, password },
+    timeout: 20000
+  })
   setAuthSession(result)
   return result.user
 }
 
 export async function getCurrentUser() {
-  const result = await authRequest<{ user: SessionUser }>('/api/auth/me')
+  const result = await requestJson<{ user: SessionUser }>('/api/auth/me', {
+    token: getAuthToken(),
+    timeout: 20000,
+    onUnauthorized: clearAuthSession
+  })
   uni.setStorageSync('xiaoxiaoshuo.currentUser', result.user)
   return result.user
 }

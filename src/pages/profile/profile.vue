@@ -61,7 +61,11 @@ function openLogin() {
       <view class="avatar">{{ user?.username?.slice(0, 1) || '西' }}</view>
       <view>
         <view class="username">{{ loggedIn ? user?.username || '加载中' : '未登录' }}</view>
-        <view v-if="!loggedIn || accessText" class="status" :class="{ active: user?.accessEnabled }">
+        <view
+          v-if="!loggedIn || accessText"
+          class="status"
+          :class="{ active: user?.accessEnabled }"
+        >
           {{ loggedIn ? accessText : '登录以获取更多权限' }}
         </view>
       </view>

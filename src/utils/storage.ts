@@ -18,7 +18,10 @@ export function addSearchHistory(query: string) {
   if (!value) {
     return
   }
-  const next = [value, ...getSearchHistory().filter((item) => item !== value)].slice(0, MAX_HISTORY_ITEMS)
+  const next = [value, ...getSearchHistory().filter((item) => item !== value)].slice(
+    0,
+    MAX_HISTORY_ITEMS
+  )
   uni.setStorageSync(SEARCH_HISTORY_KEY, next)
 }
 
@@ -41,10 +44,10 @@ export function getReadingHistory(): ReadingHistoryItem[] {
 }
 
 export function rememberReading(item: ReadingHistoryItem) {
-  const next = [
-    item,
-    ...getReadingHistory().filter((current) => current.key !== item.key)
-  ].slice(0, MAX_HISTORY_ITEMS)
+  const next = [item, ...getReadingHistory().filter((current) => current.key !== item.key)].slice(
+    0,
+    MAX_HISTORY_ITEMS
+  )
   uni.setStorageSync(READING_HISTORY_KEY, next)
 }
 

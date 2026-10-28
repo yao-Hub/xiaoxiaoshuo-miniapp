@@ -1,7 +1,9 @@
 <script setup lang="ts">
-import { computed, reactive, ref } from 'vue'
+import { computed, ref } from 'vue'
 import { onLoad } from '@dcloudio/uni-app'
-import { ApiRequestError, searchBooks } from '@/services/novel'
+import BookResultCard from '@/components/book/BookResultCard.vue'
+import { searchBooks } from '@/services/novel'
+import { ApiRequestError } from '@/services/http'
 import { addSearchHistory } from '@/utils/storage'
 import { getAuthToken, openLoginPage, openProtectedPage } from '@/services/auth'
 import type { Book, SearchGroup } from '@/types/novel'
@@ -11,7 +13,6 @@ const inputValue = ref('')
 const groups = ref<SearchGroup[]>([])
 const loading = ref(false)
 const errorMessage = ref('')
-const failedCovers = reactive<Record<string, boolean>>({})
 const totalResults = computed(() =>
   groups.value.reduce((total, group) => total + group.items.length, 0)
 )
@@ -77,9 +78,7 @@ function openCatalog(book: Book) {
 
 function openReader(book: Book) {
   const hasDirectChapter =
-    book.readUrl &&
-    book.readUrl !== book.catalogUrl &&
-    !/\/chapter\/\d+\/0\/?$/.test(book.readUrl)
+    book.readUrl && book.readUrl !== book.catalogUrl && !/\/chapter\/\d+\/0\/?$/.test(book.readUrl)
 
   if (!hasDirectChapter) {
     openCatalog(book)
@@ -91,9 +90,6 @@ function openReader(book: Book) {
   )
 }
 
-function markCoverFailed(book: Book) {
-  failedCovers[book.id] = true
-}
 </script>
 
 <template>
@@ -136,34 +132,13 @@ function markCoverFailed(book: Book) {
         <view v-else-if="!group.items.length" class="group-empty card">没有找到相关作品</view>
 
         <view v-else class="book-list">
-          <view v-for="book in group.items" :key="book.id" class="book-card card">
-            <view class="book-main" @tap="openCatalog(book)">
-              <view class="book-row">
-                <image
-                  v-if="book.coverUrl && !failedCovers[book.id]"
-                  class="book-cover"
-                  :src="book.coverUrl"
-                  mode="aspectFill"
-                  lazy-load
-                  @error="markCoverFailed(book)"
-                />
-                <view
-                  v-else
-                  class="book-cover cover-fallback"
-                  :class="`cover-${book.source}`"
-                >
-                  <text class="cover-letter">{{ book.title.slice(0, 4) }}</text>
-                  <text class="cover-source">{{ book.sourceLabel }}</text>
-                </view>
-                <view class="book-details">
-                  <view class="book-title">{{ book.title }}</view>
-                  <view class="book-meta">{{ book.author || '作者未知' }}</view>
-                  <view v-if="book.intro" class="book-intro">{{ book.intro }}</view>
-                  <button class="read-button" @tap.stop="openReader(book)">开始阅读</button>
-                </view>
-              </view>
-            </view>
-          </view>
+          <BookResultCard
+            v-for="book in group.items"
+            :key="book.id"
+            :book="book"
+            @catalog="openCatalog"
+            @reader="openReader"
+          />
         </view>
       </view>
     </view>
@@ -276,122 +251,6 @@ function markCoverFailed(book: Book) {
   color: var(--muted);
   text-align: center;
   font-size: 28rpx;
-}
-
-.book-card {
-  padding: 22rpx;
-}
-
-.book-main {
-  width: 100%;
-  margin: 0;
-  padding: 0;
-  color: var(--ink);
-  background: transparent;
-  text-align: left;
-  line-height: 1.45;
-}
-
-.book-row {
-  display: flex;
-  align-items: flex-start;
-  gap: 20rpx;
-}
-
-.book-cover {
-  flex: 0 0 106rpx;
-  width: 106rpx;
-  height: 144rpx;
-  overflow: hidden;
-  background: var(--surface-strong);
-  border: 1rpx solid var(--line);
-  border-radius: 10rpx;
-  box-shadow: 5rpx 7rpx 0 rgba(0, 0, 0, 0.3);
-}
-
-.cover-fallback {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 10rpx;
-  color: #17130a;
-  background:
-    linear-gradient(145deg, rgba(255, 255, 255, 0.42), transparent 45%),
-    var(--gold);
-}
-
-.cover-kadokado {
-  color: #fff4e2;
-  background:
-    linear-gradient(145deg, rgba(255, 255, 255, 0.2), transparent 45%),
-    #4c3d68;
-}
-
-.cover-letter {
-  display: -webkit-box;
-  width: 84rpx;
-  overflow: hidden;
-  font-size: 32rpx;
-  font-weight: 800;
-  line-height: 1.25;
-  text-align: center;
-  word-break: break-all;
-  -webkit-box-orient: vertical;
-  -webkit-line-clamp: 2;
-}
-
-.cover-source {
-  max-width: 88rpx;
-  overflow: hidden;
-  font-size: 28rpx;
-  font-weight: 700;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.book-details {
-  min-width: 0;
-  flex: 1;
-}
-
-.book-title {
-  display: -webkit-box;
-  overflow: hidden;
-  font-size: 31rpx;
-  font-weight: 700;
-  line-height: 1.4;
-  -webkit-box-orient: vertical;
-  -webkit-line-clamp: 2;
-}
-
-.book-meta {
-  margin-top: 9rpx;
-  color: var(--gold);
-  font-size: 28rpx;
-}
-
-.book-intro {
-  display: -webkit-box;
-  margin-top: 14rpx;
-  overflow: hidden;
-  color: var(--muted);
-  font-size: 28rpx;
-  -webkit-box-orient: vertical;
-  -webkit-line-clamp: 2;
-}
-
-.read-button {
-  width: 164rpx;
-  height: 58rpx;
-  margin: 16rpx 0 0;
-  padding: 0;
-  color: var(--ink);
-  background: var(--surface-strong);
-  border: 1rpx solid var(--line);
-  border-radius: 14rpx;
-  font-size: 28rpx;
-  line-height: 58rpx;
 }
 
 .skeleton {

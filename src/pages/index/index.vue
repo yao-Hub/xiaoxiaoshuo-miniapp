@@ -111,11 +111,7 @@ function deleteRecentSearch(query: string) {
         <text class="history-link" @tap="openHistory">查看全部</text>
       </view>
       <view class="chips">
-        <view
-          v-for="item in searchHistory"
-          :key="item"
-          class="recent-chip"
-        >
+        <view v-for="item in searchHistory" :key="item" class="recent-chip">
           <button class="recent-chip-main" @tap="openSearch(item)">{{ item }}</button>
           <button
             class="recent-chip-delete"
@@ -290,5 +286,4 @@ function deleteRecentSearch(query: string) {
 .recent-chip-delete:active {
   color: var(--danger);
 }
-
 </style>

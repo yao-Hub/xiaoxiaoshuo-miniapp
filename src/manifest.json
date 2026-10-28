@@ -2,8 +2,8 @@
   "name": "西瓜啃书",
   "appid": "__UNI__XIAOXIAOSHUO",
   "description": "跨站搜索书名或地址，在移动端阅读小说。",
-  "versionName": "0.1.1",
-  "versionCode": "101",
+  "versionName": "0.1.2",
+  "versionCode": "102",
   "transformPx": false,
   "h5": {
     "title": "西瓜啃书"
