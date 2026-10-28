@@ -23,11 +23,7 @@ const coverFailed = ref(false)
           lazy-load
           @error="coverFailed = true"
         />
-        <view
-          v-else
-          class="book-cover cover-fallback"
-          :class="`cover-${props.book.source}`"
-        >
+        <view v-else class="book-cover cover-fallback" :class="`cover-${props.book.source}`">
           <text class="cover-letter">{{ props.book.title.slice(0, 4) }}</text>
           <text class="cover-source">{{ props.book.sourceLabel }}</text>
         </view>
@@ -71,7 +67,7 @@ const coverFailed = ref(false)
   background: var(--surface-strong);
   border: 1rpx solid var(--line);
   border-radius: 10rpx;
-  box-shadow: 5rpx 7rpx 0 rgba(0, 0, 0, 0.3);
+  box-shadow: 5rpx 7rpx 0 var(--shadow);
 }
 
 .cover-fallback {
@@ -80,17 +76,13 @@ const coverFailed = ref(false)
   align-items: center;
   justify-content: center;
   gap: 10rpx;
-  color: #17130a;
-  background:
-    linear-gradient(145deg, rgba(255, 255, 255, 0.42), transparent 45%),
-    var(--gold);
+  color: var(--button-ink);
+  background: linear-gradient(145deg, rgba(255, 255, 255, 0.42), transparent 45%), var(--gold);
 }
 
 .cover-kadokado {
   color: #fff4e2;
-  background:
-    linear-gradient(145deg, rgba(255, 255, 255, 0.2), transparent 45%),
-    #4c3d68;
+  background: linear-gradient(145deg, rgba(255, 255, 255, 0.2), transparent 45%), #4c3d68;
 }
 
 .cover-letter {

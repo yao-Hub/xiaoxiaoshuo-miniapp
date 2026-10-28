@@ -2,6 +2,7 @@
 import { reactive, ref } from 'vue'
 import { onLoad } from '@dcloudio/uni-app'
 import { login, register } from '@/services/auth'
+import { usePageTheme } from '@/composables/useTheme'
 
 const mode = ref<'login' | 'register'>('login')
 const loading = ref(false)
@@ -14,6 +15,7 @@ const form = reactive({
   password: '',
   confirmPassword: ''
 })
+const { themeClass } = usePageTheme()
 
 onLoad((options) => {
   redirectUrl.value = decodeURIComponent(String(options?.redirect || ''))
@@ -67,7 +69,7 @@ function toggleMode() {
 </script>
 
 <template>
-  <view class="login-page">
+  <view class="login-page" :class="themeClass">
     <view class="login-card">
       <view class="eyebrow">XIGUA KENSHU</view>
       <view class="title">西瓜啃书</view>
@@ -142,8 +144,7 @@ function toggleMode() {
   display: grid;
   min-height: 100vh;
   padding: 40rpx 30rpx;
-  background:
-    radial-gradient(circle at 80% 0%, rgba(245, 200, 76, 0.16), transparent 36%), var(--bg);
+  background: radial-gradient(circle at 80% 0%, var(--ambient), transparent 36%), var(--bg);
   place-items: center;
 }
 
@@ -184,7 +185,7 @@ function toggleMode() {
   margin-bottom: 22rpx;
   padding: 0 24rpx;
   color: var(--ink);
-  background: #151310;
+  background: var(--input-bg);
   border: 1rpx solid var(--line);
   border-radius: 16rpx;
   font-size: 30rpx;
@@ -248,7 +249,7 @@ function toggleMode() {
 }
 
 .placeholder {
-  color: #746e64;
+  color: var(--muted);
 }
 
 .error {
@@ -261,7 +262,7 @@ function toggleMode() {
 .primary {
   height: 88rpx;
   margin: 8rpx 0 0;
-  color: #17130a;
+  color: var(--button-ink);
   background: var(--gold);
   border-radius: 16rpx;
   font-size: 31rpx;

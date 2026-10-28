@@ -6,6 +6,7 @@ import { searchBooks } from '@/services/novel'
 import { ApiRequestError } from '@/services/http'
 import { addSearchHistory } from '@/utils/storage'
 import { getAuthToken, openLoginPage, openProtectedPage } from '@/services/auth'
+import { usePageTheme } from '@/composables/useTheme'
 import type { Book, SearchGroup } from '@/types/novel'
 
 const query = ref('')
@@ -13,6 +14,7 @@ const inputValue = ref('')
 const groups = ref<SearchGroup[]>([])
 const loading = ref(false)
 const errorMessage = ref('')
+const { themeClass } = usePageTheme()
 const totalResults = computed(() =>
   groups.value.reduce((total, group) => total + group.items.length, 0)
 )
@@ -89,11 +91,10 @@ function openReader(book: Book) {
     `/pages/reader/reader?chapterUrl=${encodeURIComponent(book.readUrl)}&catalogUrl=${encodeURIComponent(book.catalogUrl)}&bookTitle=${encodeURIComponent(book.title)}`
   )
 }
-
 </script>
 
 <template>
-  <view class="page search-page">
+  <view class="page search-page" :class="themeClass">
     <view class="search-bar card">
       <input
         v-model="inputValue"
@@ -165,14 +166,14 @@ function openReader(book: Book) {
 }
 
 .placeholder {
-  color: #777167;
+  color: var(--muted);
 }
 
 .search-button {
   width: 130rpx;
   height: 76rpx;
   margin: 0;
-  color: #17130a;
+  color: var(--button-ink);
   background: var(--gold);
   border-radius: 16rpx;
   font-size: 30rpx;
@@ -255,7 +256,12 @@ function openReader(book: Book) {
 
 .skeleton {
   height: 200rpx;
-  background: linear-gradient(100deg, #211f1b 20%, #2b2822 38%, #211f1b 56%);
+  background: linear-gradient(
+    100deg,
+    var(--skeleton-a) 20%,
+    var(--skeleton-b) 38%,
+    var(--skeleton-a) 56%
+  );
   background-size: 200% 100%;
   animation: shimmer 1.1s infinite linear;
 }

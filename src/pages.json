@@ -23,7 +23,8 @@
       "path": "pages/reader/reader",
       "style": {
         "navigationBarTitleText": "阅读",
-        "disableScroll": false
+        "navigationStyle": "custom",
+        "disableScroll": true
       }
     },
     {

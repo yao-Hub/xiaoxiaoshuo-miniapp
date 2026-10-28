@@ -2,20 +2,20 @@
 import { ref } from 'vue'
 import { onShow } from '@dcloudio/uni-app'
 import { getReadingHistory, getSearchHistory, removeSearchHistory } from '@/utils/storage'
-import { syncTabBar } from '@/utils/tabbar'
 import { getAuthToken, openLoginPage, openProtectedPage } from '@/services/auth'
 import type { ReadingHistoryItem } from '@/types/novel'
+import { useTabBarTheme } from '@/composables/useTabBarTheme'
 
 const query = ref('')
 const searchHistory = ref<string[]>([])
 const readingHistory = ref<ReadingHistoryItem[]>([])
 
 const suggestions = ['完美世界', '盘龙', '斗破苍穹', '遮天']
+const { themeClass } = useTabBarTheme(0)
 
 onShow(() => {
   searchHistory.value = getSearchHistory().slice(0, 6)
   readingHistory.value = getReadingHistory().slice(0, 1)
-  syncTabBar(0)
 })
 
 function openSearch(value = query.value) {
@@ -61,7 +61,7 @@ function deleteRecentSearch(query: string) {
 </script>
 
 <template>
-  <view class="page home-page">
+  <view class="page home-page" :class="themeClass">
     <view class="hero">
       <view class="eyebrow">CROSS-SITE READING</view>
       <view class="brand">西瓜啃书</view>
@@ -162,7 +162,7 @@ function deleteRecentSearch(query: string) {
 .search-card {
   display: flex;
   padding: 12rpx;
-  box-shadow: 0 24rpx 70rpx rgba(0, 0, 0, 0.22);
+  box-shadow: 0 24rpx 70rpx var(--shadow);
 }
 
 .search-input {
@@ -175,14 +175,14 @@ function deleteRecentSearch(query: string) {
 }
 
 .search-placeholder {
-  color: #777167;
+  color: var(--muted);
 }
 
 .search-button {
   width: 142rpx;
   height: 82rpx;
   margin: 0;
-  color: #18140b;
+  color: var(--button-ink);
   background: var(--gold);
   border-radius: 18rpx;
   font-size: 30rpx;

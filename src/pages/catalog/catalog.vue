@@ -2,6 +2,7 @@
 import { computed, ref } from 'vue'
 import { onLoad } from '@dcloudio/uni-app'
 import { getCatalog } from '@/services/novel'
+import { usePageTheme } from '@/composables/useTheme'
 import type { Book, Chapter } from '@/types/novel'
 
 const catalogUrl = ref('')
@@ -12,6 +13,7 @@ const loading = ref(true)
 const errorMessage = ref('')
 const ascending = ref(true)
 const coverFailed = ref(false)
+const { themeClass } = usePageTheme()
 
 const visibleChapters = computed(() =>
   ascending.value ? chapters.value : [...chapters.value].reverse()
@@ -40,7 +42,7 @@ function openChapter(chapter: Chapter) {
 </script>
 
 <template>
-  <view class="page catalog-page">
+  <view class="page catalog-page" :class="themeClass">
     <view v-if="loading" class="empty">正在读取目录…</view>
     <view v-else-if="errorMessage" class="empty">{{ errorMessage }}</view>
 
@@ -106,10 +108,10 @@ function openChapter(chapter: Chapter) {
   flex: 0 0 132rpx;
   width: 132rpx;
   height: 174rpx;
-  color: #17130a;
+  color: var(--button-ink);
   background: linear-gradient(135deg, rgba(255, 255, 255, 0.34), transparent 45%), var(--gold);
   border-radius: 12rpx 20rpx 20rpx 12rpx;
-  box-shadow: 8rpx 10rpx 0 #4b3d18;
+  box-shadow: 8rpx 10rpx 0 var(--shadow);
   font-size: 64rpx;
   font-weight: 900;
 }

@@ -9,12 +9,17 @@ import {
   openLoginPage,
   type SessionUser
 } from '@/services/auth'
-import { syncTabBar } from '@/utils/tabbar'
+import { useTabBarTheme } from '@/composables/useTabBarTheme'
 
 const user = ref<SessionUser | undefined>(getCachedUser())
 const loggedIn = ref(Boolean(getAuthToken()))
-const loading = ref(false)
 const errorMessage = ref('')
+const { themeClass, resolvedTheme, toggleResolvedTheme } = useTabBarTheme(2)
+const themeIconPath = computed(() =>
+  resolvedTheme.value === 'dark'
+    ? '/static/icons/theme-sun-light.svg'
+    : '/static/icons/theme-moon-dark.svg'
+)
 
 const accessText = computed(() => {
   if (!user.value?.accessEnabled) {
@@ -26,20 +31,29 @@ const accessText = computed(() => {
   return '功能正常'
 })
 
+const usernameText = computed(() => {
+  const username = user.value?.username
+  if (typeof username === 'string' && username.trim()) {
+    return username.trim()
+  }
+  return loggedIn.value ? '账号加载中' : '未登录'
+})
+
+const avatarText = computed(() => {
+  const username = user.value?.username
+  return typeof username === 'string' && username.trim() ? username.trim().slice(0, 1) : '西'
+})
+
 onShow(async () => {
-  syncTabBar(2)
   loggedIn.value = Boolean(getAuthToken())
   if (!loggedIn.value) {
     user.value = undefined
     return
   }
-  loading.value = true
   try {
     user.value = await getCurrentUser()
   } catch (error) {
     errorMessage.value = error instanceof Error ? error.message : String(error)
-  } finally {
-    loading.value = false
   }
 })
 
@@ -56,11 +70,21 @@ function openLogin() {
 </script>
 
 <template>
-  <view class="page profile-page">
+  <view class="page profile-page" :class="themeClass">
+    <view class="profile-toolbar">
+      <button
+        class="theme-switch"
+        :aria-label="resolvedTheme === 'dark' ? '切换为浅色模式' : '切换为深色模式'"
+        @tap="toggleResolvedTheme"
+      >
+        <image class="theme-icon-image" :src="themeIconPath" mode="aspectFit" aria-hidden="true" />
+      </button>
+    </view>
+
     <view class="profile-hero card">
-      <view class="avatar">{{ user?.username?.slice(0, 1) || '西' }}</view>
+      <view class="avatar">{{ avatarText }}</view>
       <view>
-        <view class="username">{{ loggedIn ? user?.username || '加载中' : '未登录' }}</view>
+        <view class="username">{{ usernameText }}</view>
         <view
           v-if="!loggedIn || accessText"
           class="status"
@@ -91,10 +115,6 @@ function openLogin() {
     </view>
 
     <view v-if="errorMessage" class="status-tip error">{{ errorMessage }}</view>
-    <view v-else-if="loggedIn && !user?.accessEnabled" class="status-tip">
-      当前版本部分内容暂不可用。
-    </view>
-
     <button v-if="loggedIn" class="logout-button" @tap="logout">退出登录</button>
     <button v-else class="login-button" @tap="openLogin">登录 / 注册</button>
   </view>
@@ -102,8 +122,37 @@ function openLogin() {
 
 <style scoped>
 .profile-page {
-  padding-top: 44rpx;
+  padding-top: 22rpx;
   padding-bottom: calc(150rpx + env(safe-area-inset-bottom));
+}
+
+.profile-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  min-height: 64rpx;
+  margin-bottom: 14rpx;
+}
+
+.theme-switch {
+  display: flex;
+  width: 72rpx;
+  height: 72rpx;
+  margin: 0;
+  padding: 0;
+  align-items: center;
+  justify-content: center;
+  color: var(--ink);
+  background: transparent;
+  border: 0;
+  border-radius: 50%;
+  flex: 0 0 72rpx;
+}
+
+.theme-icon-image {
+  display: block;
+  width: 44rpx;
+  height: 44rpx;
 }
 
 .profile-hero {
@@ -117,7 +166,7 @@ function openLogin() {
   display: grid;
   width: 104rpx;
   height: 104rpx;
-  color: #17130a;
+  color: var(--button-ink);
   background: var(--gold);
   border-radius: 28rpx;
   font-size: 50rpx;
@@ -137,7 +186,7 @@ function openLogin() {
 }
 
 .status.active {
-  color: #67d38a;
+  color: var(--success);
 }
 
 .detail-card {
@@ -193,18 +242,13 @@ function openLogin() {
 .logout-button {
   color: var(--danger);
   background: transparent;
-  border: 1rpx solid rgba(231, 93, 82, 0.4);
+  border: 1rpx solid var(--danger-border);
 }
 
 .login-button {
-  color: #17130a;
+  color: var(--button-ink);
   background: var(--gold);
   border: 0;
   font-weight: 700;
-}
-
-.middle {
-  display: grid;
-  place-items: center;
 }
 </style>

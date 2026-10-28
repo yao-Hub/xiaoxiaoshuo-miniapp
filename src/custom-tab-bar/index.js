@@ -1,8 +1,7 @@
 Component({
   data: {
     selected: 0,
-    color: '#a9a195',
-    selectedColor: '#f5c84c',
+    theme: 'dark',
     list: [
       {
         pagePath: '/pages/index/index',

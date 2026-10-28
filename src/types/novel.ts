@@ -39,6 +39,9 @@ export interface ReadingHistoryItem {
   chapterTitle: string
   chapterUrl: string
   catalogUrl: string
+  scrollTop?: number
+  progress?: number
+  pageIndex?: number
   updatedAt: number
 }
 

@@ -10,16 +10,16 @@ import {
   removeSearchHistory
 } from '@/utils/storage'
 import type { ReadingHistoryItem } from '@/types/novel'
-import { syncTabBar } from '@/utils/tabbar'
 import { openProtectedPage } from '@/services/auth'
+import { useTabBarTheme } from '@/composables/useTabBarTheme'
 
 const activeTab = ref<'reading' | 'search'>('reading')
 const readingHistory = ref<ReadingHistoryItem[]>([])
 const searchHistory = ref<string[]>([])
+const { themeClass } = useTabBarTheme(1)
 
 onShow(() => {
   refresh()
-  syncTabBar(1)
 })
 
 function refresh() {
@@ -90,7 +90,7 @@ function formatTime(timestamp: number) {
 </script>
 
 <template>
-  <view class="page history-page">
+  <view class="page history-page" :class="themeClass">
     <view class="history-header">
       <view>
         <view class="history-title">历史</view>
@@ -166,7 +166,7 @@ function formatTime(timestamp: number) {
   padding: 0 18rpx;
   color: var(--danger);
   background: transparent;
-  border: 1rpx solid rgba(231, 93, 82, 0.35);
+  border: 1rpx solid var(--danger-border);
   border-radius: 13rpx;
   font-size: 28rpx;
   line-height: 56rpx;
@@ -189,7 +189,7 @@ function formatTime(timestamp: number) {
 }
 
 .tab.active {
-  color: #17130a;
+  color: var(--button-ink);
   background: var(--gold);
   font-weight: 700;
 }
