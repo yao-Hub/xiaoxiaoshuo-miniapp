@@ -49,6 +49,7 @@ async function request<T>(
     data,
     token: getAuthToken(),
     timeout: 30000,
+    showLoading: false,
     forbiddenMessage,
     onUnauthorized: clearAuthSession
   })

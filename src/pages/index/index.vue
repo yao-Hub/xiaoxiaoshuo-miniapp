@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref } from 'vue'
 import { onShow } from '@dcloudio/uni-app'
+import GlobalAudiobookPlayer from '@/components/audiobook/GlobalAudiobookPlayer.vue'
 import { getReadingHistory, getSearchHistory, removeSearchHistory } from '@/utils/storage'
 import { getAuthToken, openLoginPage, openProtectedPage } from '@/services/auth'
 import type { ReadingHistoryItem } from '@/types/novel'
@@ -46,7 +47,7 @@ function openSearch(value = query.value) {
 
 function continueReading(item: ReadingHistoryItem) {
   openProtectedPage(
-    `/pages/reader/reader?chapterUrl=${encodeURIComponent(item.chapterUrl)}&catalogUrl=${encodeURIComponent(item.catalogUrl)}&bookTitle=${encodeURIComponent(item.bookTitle)}`
+    `/pages/reader/reader?chapterUrl=${encodeURIComponent(item.chapterUrl)}&catalogUrl=${encodeURIComponent(item.catalogUrl)}&bookTitle=${encodeURIComponent(item.bookTitle)}&coverUrl=${encodeURIComponent(item.coverUrl || '')}`
   )
 }
 
@@ -123,6 +124,8 @@ function deleteRecentSearch(query: string) {
         </view>
       </view>
     </view>
+
+    <GlobalAudiobookPlayer placement="above-tab" />
   </view>
 </template>
 

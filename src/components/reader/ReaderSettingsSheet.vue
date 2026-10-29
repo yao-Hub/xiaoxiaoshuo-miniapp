@@ -93,6 +93,7 @@ function changeBrightness(event: { detail: { value: number } }) {
       <view class="font-controls">
         <button
           class="font-button"
+          :class="{ disabled: props.fontSize <= READER_FONT_SIZE_MIN }"
           :disabled="props.fontSize <= READER_FONT_SIZE_MIN"
           aria-label="减小文字"
           @tap="changeFontSize(-1)"
@@ -112,6 +113,7 @@ function changeBrightness(event: { detail: { value: number } }) {
         />
         <button
           class="font-button"
+          :class="{ disabled: props.fontSize >= READER_FONT_SIZE_MAX }"
           :disabled="props.fontSize >= READER_FONT_SIZE_MAX"
           aria-label="增大文字"
           @tap="changeFontSize(1)"
@@ -188,7 +190,7 @@ function changeBrightness(event: { detail: { value: number } }) {
   line-height: 72rpx;
 }
 
-.font-button[disabled] {
+.font-button.disabled {
   color: var(--muted);
   opacity: 0.45;
 }

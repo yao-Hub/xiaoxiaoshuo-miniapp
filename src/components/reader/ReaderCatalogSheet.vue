@@ -23,6 +23,7 @@ const LOAD_MORE_COUNT = 100
 const visibleCount = ref(INITIAL_VISIBLE_COUNT)
 const ascending = ref(true)
 const scrollTarget = ref('')
+const showBackToTop = ref(false)
 let initialLocateDone = false
 
 const currentIndex = computed(() =>
@@ -82,6 +83,17 @@ async function locateCurrentChapter() {
     scrollTarget.value = `chapter-${currentDisplayIndex.value}`
   }
 }
+
+function handleScroll(event: { detail: { scrollTop: number } }) {
+  showBackToTop.value = event.detail.scrollTop > 240
+}
+
+async function scrollToTop() {
+  scrollTarget.value = ''
+  await nextTick()
+  scrollTarget.value = 'chapter-0'
+  showBackToTop.value = false
+}
 </script>
 
 <template>
@@ -114,27 +126,32 @@ async function locateCurrentChapter() {
       <button class="retry-button" @tap="emit('retry')">重新加载</button>
     </view>
     <view v-else-if="!props.chapters.length" class="sheet-state">暂无章节</view>
-    <scroll-view
-      v-else
-      class="chapter-scroll"
-      scroll-y
-      :scroll-into-view="scrollTarget"
-      scroll-with-animation
-      @scrolltolower="loadMore"
-    >
-      <button
-        v-for="(item, index) in visibleChapters"
-        :id="`chapter-${index}`"
-        :key="item.chapter.url"
-        class="chapter-item"
-        :class="{ active: item.chapter.url === props.currentUrl }"
-        @tap="emit('select', item.chapter)"
+    <view v-else class="chapter-scroll-shell">
+      <scroll-view
+        class="chapter-scroll"
+        scroll-y
+        :scroll-into-view="scrollTarget"
+        scroll-with-animation
+        @scroll="handleScroll"
+        @scrolltolower="loadMore"
       >
-        <text class="chapter-index">{{ item.chapterNumber }}</text>
-        <text class="chapter-name">{{ item.chapter.title }}</text>
-        <text v-if="item.chapter.url === props.currentUrl" class="chapter-current">当前</text>
+        <button
+          v-for="(item, index) in visibleChapters"
+          :id="`chapter-${index}`"
+          :key="item.chapter.url"
+          class="chapter-item"
+          :class="{ active: item.chapter.url === props.currentUrl }"
+          @tap="emit('select', item.chapter)"
+        >
+          <text class="chapter-index">{{ item.chapterNumber }}</text>
+          <text class="chapter-name">{{ item.chapter.title }}</text>
+          <text v-if="item.chapter.url === props.currentUrl" class="chapter-current">当前</text>
+        </button>
+      </scroll-view>
+      <button v-if="showBackToTop" class="back-to-top" aria-label="回到目录顶部" @tap="scrollToTop">
+        <view class="back-to-top-icon" />
       </button>
-    </scroll-view>
+    </view>
   </BottomSheet>
 </template>
 
@@ -259,6 +276,37 @@ async function locateCurrentChapter() {
 
 .chapter-scroll {
   height: 62vh;
+}
+
+.chapter-scroll-shell {
+  position: relative;
+}
+
+.back-to-top {
+  position: absolute;
+  right: 18rpx;
+  bottom: 28rpx;
+  z-index: 2;
+  display: grid;
+  width: 72rpx;
+  height: 72rpx;
+  margin: 0;
+  padding: 0;
+  color: var(--button-ink);
+  background: var(--gold);
+  border: 1rpx solid rgba(255, 255, 255, 0.24);
+  border-radius: 50%;
+  box-shadow: 0 10rpx 28rpx var(--shadow);
+  place-items: center;
+}
+
+.back-to-top-icon {
+  width: 20rpx;
+  height: 20rpx;
+  margin-top: 8rpx;
+  border-top: 4rpx solid currentColor;
+  border-left: 4rpx solid currentColor;
+  transform: rotate(45deg);
 }
 
 .chapter-item {

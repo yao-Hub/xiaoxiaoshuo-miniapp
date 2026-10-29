@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import { onLoad } from '@dcloudio/uni-app'
+import GlobalAudiobookPlayer from '@/components/audiobook/GlobalAudiobookPlayer.vue'
 import BookResultCard from '@/components/book/BookResultCard.vue'
 import { searchBooks } from '@/services/novel'
 import { ApiRequestError } from '@/services/http'
@@ -74,7 +75,7 @@ function promptSearchLogin(value: string) {
 
 function openCatalog(book: Book) {
   openProtectedPage(
-    `/pages/catalog/catalog?url=${encodeURIComponent(book.catalogUrl)}&title=${encodeURIComponent(book.title)}`
+    `/pages/catalog/catalog?url=${encodeURIComponent(book.catalogUrl)}&title=${encodeURIComponent(book.title)}&coverUrl=${encodeURIComponent(book.coverUrl)}`
   )
 }
 
@@ -88,7 +89,7 @@ function openReader(book: Book) {
   }
 
   openProtectedPage(
-    `/pages/reader/reader?chapterUrl=${encodeURIComponent(book.readUrl)}&catalogUrl=${encodeURIComponent(book.catalogUrl)}&bookTitle=${encodeURIComponent(book.title)}`
+    `/pages/reader/reader?chapterUrl=${encodeURIComponent(book.readUrl)}&catalogUrl=${encodeURIComponent(book.catalogUrl)}&bookTitle=${encodeURIComponent(book.title)}&coverUrl=${encodeURIComponent(book.coverUrl)}`
   )
 }
 </script>
@@ -115,8 +116,10 @@ function openReader(book: Book) {
       <text class="result-count">{{ totalResults }} 本</text>
     </view>
 
-    <view v-if="loading" class="loading-list">
-      <view v-for="index in 3" :key="index" class="skeleton card" />
+    <view v-if="loading" class="loading-state">
+      <view class="loading-list">
+        <view v-for="index in 3" :key="index" class="skeleton card" />
+      </view>
     </view>
 
     <view v-else-if="errorMessage" class="empty">{{ errorMessage }}</view>
@@ -143,6 +146,8 @@ function openReader(book: Book) {
         </view>
       </view>
     </view>
+
+    <GlobalAudiobookPlayer />
   </view>
 </template>
 
@@ -212,6 +217,12 @@ function openReader(book: Book) {
   gap: 20rpx;
 }
 
+.loading-state {
+  display: flex;
+  flex-direction: column;
+  gap: 22rpx;
+}
+
 .source-group {
   display: flex;
   flex-direction: column;
@@ -263,15 +274,5 @@ function openReader(book: Book) {
     var(--skeleton-a) 56%
   );
   background-size: 200% 100%;
-  animation: shimmer 1.1s infinite linear;
-}
-
-@keyframes shimmer {
-  from {
-    background-position: 100% 0;
-  }
-  to {
-    background-position: -100% 0;
-  }
 }
 </style>

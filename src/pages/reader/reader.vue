@@ -1,11 +1,14 @@
 <script setup lang="ts">
 import { computed, reactive, ref, watch } from 'vue'
 import { onHide, onLoad, onUnload } from '@dcloudio/uni-app'
+import GlobalAudiobookPlayer from '@/components/audiobook/GlobalAudiobookPlayer.vue'
 import ReaderBottomBar from '@/components/reader/ReaderBottomBar.vue'
 import ReaderCatalogSheet from '@/components/reader/ReaderCatalogSheet.vue'
 import ReaderChapterContent from '@/components/reader/ReaderChapterContent.vue'
+import ReaderListenButton from '@/components/reader/ReaderListenButton.vue'
 import ReaderSettingsSheet from '@/components/reader/ReaderSettingsSheet.vue'
 import ReaderTopBar from '@/components/reader/ReaderTopBar.vue'
+import { useAudiobook } from '@/composables/useAudiobook'
 import { useReaderCatalog } from '@/composables/useReaderCatalog'
 import { useReaderEngine } from '@/composables/useReaderEngine'
 import { useReaderViewport } from '@/composables/useReaderViewport'
@@ -18,7 +21,8 @@ import {
 } from '@/constants/reader'
 import { getAuthToken, openLoginPage } from '@/services/auth'
 import type { Chapter, ChapterContent } from '@/types/novel'
-import type { ReaderPageMode, ReaderSettings } from '@/types/reader'
+import type { ReaderHighlightRange, ReaderPageMode, ReaderSettings } from '@/types/reader'
+import { splitChapterParagraphs } from '@/utils/pagination'
 import { resolveHorizontalReaderTapZone, resolveReaderTapZone } from '@/utils/reader-interaction'
 import {
   getReaderSettings,
@@ -41,6 +45,7 @@ interface ReaderScrollEvent {
 }
 
 const readerSettings = reactive<ReaderSettings>(getReaderSettings())
+const audiobook = useAudiobook()
 const viewport = useReaderViewport()
 const readerEngine = useReaderEngine({
   settings: readerSettings,
@@ -85,12 +90,14 @@ const {
 } = readerEngine
 
 const bookTitle = ref('')
+const routeCoverUrl = ref('')
 const fallbackCatalogUrl = ref('')
 const effectiveCatalogUrl = computed(() => catalogUrl.value || fallbackCatalogUrl.value)
 const readerCatalog = useReaderCatalog({
   catalogUrl: effectiveCatalogUrl,
   currentChapterUrl: chapterUrl,
-  bookTitle
+  bookTitle,
+  fallbackCoverUrl: routeCoverUrl
 })
 const {
   chapters: catalogChapters,
@@ -98,6 +105,7 @@ const {
   errorMessage: catalogError,
   visible: catalogVisible,
   dragPreviewIndex,
+  bookCoverUrl,
   currentChapterIndex,
   sliderValue,
   sliderMax,
@@ -112,6 +120,16 @@ const {
   clearChapterPreview,
   resolveChapterAt
 } = readerCatalog
+
+watch(
+  bookCoverUrl,
+  (coverUrl) => {
+    if (coverUrl && audiobook.visible.value) {
+      audiobook.setCoverUrl(coverUrl)
+    }
+  },
+  { immediate: true }
+)
 
 const { themeClass, resolvedTheme, toggleResolvedTheme } = usePageTheme()
 const toolbarVisible = ref(false)
@@ -130,6 +148,71 @@ const showTopBar = computed(() => toolbarVisible.value || loading.value || fatal
 const showReaderControls = computed(
   () => Boolean(chapter.value) && swiperPages.value.length > 0 && !fatalError.value
 )
+const chapterParagraphs = computed(() =>
+  chapter.value ? splitChapterParagraphs(chapter.value.content) : []
+)
+const audiobookParagraphLocation = computed(() => {
+  const timing = audiobook.activeTiming.value
+  if (
+    !audiobook.visible.value ||
+    !timing ||
+    !chapter.value ||
+    audiobook.chapterUrl.value !== chapter.value.chapterUrl
+  ) {
+    return undefined
+  }
+  const paragraphs = chapterParagraphs.value
+  let paragraphStart = 0
+  for (let index = 0; index < paragraphs.length; index += 1) {
+    const paragraph = paragraphs[index]
+    const paragraphEnd = paragraphStart + paragraph.length
+    const nextParagraphStart = paragraphEnd + 2
+    if (timing.startOffset < paragraphStart || timing.startOffset >= nextParagraphStart) {
+      paragraphStart = nextParagraphStart
+      continue
+    }
+    const paragraphIndex =
+      timing.startOffset > paragraphEnd && index + 1 < paragraphs.length ? index + 1 : index
+    const selectedParagraph = paragraphs[paragraphIndex]
+    const selectedStart = paragraphIndex === index ? paragraphStart : nextParagraphStart
+    const selectedEnd = selectedStart + selectedParagraph.length
+    const startOffset =
+      paragraphIndex === index ? Math.min(timing.startOffset, paragraphEnd) - paragraphStart : 0
+    const endOffset = Math.max(startOffset, Math.min(timing.endOffset, selectedEnd) - selectedStart)
+    return {
+      paragraphIndex,
+      startOffset,
+      endOffset,
+      paragraphEnd: selectedEnd
+    }
+  }
+  return undefined
+})
+const audiobookHighlightRange = computed<ReaderHighlightRange | undefined>(() => {
+  const location = audiobookParagraphLocation.value
+  if (!location) {
+    return undefined
+  }
+  return {
+    paragraphIndex: location.paragraphIndex,
+    startOffset: location.startOffset,
+    endOffset: location.endOffset
+  }
+})
+const audiobookPageIndex = computed(() => {
+  const location = audiobookParagraphLocation.value
+  if (!location) {
+    return undefined
+  }
+  return readerPages.value.findIndex((page) =>
+    page.lines.some(
+      (line) =>
+        line.paragraphIndex === location.paragraphIndex &&
+        location.startOffset >= line.lineStartOffset &&
+        location.startOffset <= line.lineEndOffset
+    )
+  )
+})
 const brightnessOverlayStyle = computed(() => ({
   opacity: String((100 - readerSettings.brightness) / 100)
 }))
@@ -143,10 +226,23 @@ watch(
   }
 )
 
+watch(
+  () => [audiobook.playing.value, audiobookPageIndex.value] as const,
+  ([playing, pageIndex]) => {
+    if (!playing || pageIndex === undefined || pageIndex < 0) {
+      return
+    }
+    if (pageIndex !== currentPageIndex.value) {
+      setPageIndex(pageIndex)
+    }
+  }
+)
+
 onLoad(async (options) => {
   const initialChapterUrl = decodeURIComponent(String(options?.chapterUrl || ''))
   fallbackCatalogUrl.value = decodeURIComponent(String(options?.catalogUrl || ''))
   bookTitle.value = decodeURIComponent(String(options?.bookTitle || ''))
+  routeCoverUrl.value = decodeURIComponent(String(options?.coverUrl || ''))
 
   const savedRecord = initialChapterUrl ? getReadingRecord(initialChapterUrl) : undefined
   const succeeded = await loadDirectChapter(initialChapterUrl, {
@@ -199,6 +295,7 @@ function handleChapterCommitted(targetChapter: ChapterContent, pageIndex: number
       chapterTitle: targetChapter.title,
       chapterUrl: targetChapter.chapterUrl,
       catalogUrl: targetChapter.catalogUrl,
+      coverUrl: bookCoverUrl.value || routeCoverUrl.value,
       scrollTop: readerSettings.pageMode === 'scroll' ? scrollReaderTop.value : 0,
       pageIndex,
       progress: 0,
@@ -214,6 +311,7 @@ function persistReadingProgress() {
   }
   updateReadingProgress({
     chapterUrl: chapter.value.chapterUrl,
+    coverUrl: bookCoverUrl.value || routeCoverUrl.value,
     scrollTop: readerSettings.pageMode === 'scroll' ? scrollReaderTop.value : 0,
     progress: getReadingProgress(),
     pageIndex: currentPageIndex.value,
@@ -397,15 +495,36 @@ function goHome() {
 }
 
 function openPreviousChapter() {
-  void moveToAdjacentChapter('previous')
+  void moveToAdjacentChapter('previous', { enterAtStart: true, instant: true })
 }
 
 function openNextChapter() {
-  void moveToAdjacentChapter('next')
+  void moveToAdjacentChapter('next', { enterAtStart: true, instant: true })
 }
 
 function openSettings() {
   settingsVisible.value = true
+}
+
+function startAudiobook() {
+  if (!chapter.value) {
+    return
+  }
+  const currentPage = readerPages.value[currentPageIndex.value]
+  const firstLine = currentPage?.lines[0]
+  if (!firstLine) {
+    uni.showToast({ title: '无法定位当前页的朗读位置', icon: 'none' })
+    return
+  }
+  void audiobook.start({
+    chapterUrl: chapter.value.chapterUrl,
+    catalogUrl: effectiveCatalogUrl.value,
+    bookTitle: bookTitle.value,
+    title: chapter.value.title,
+    coverUrl: bookCoverUrl.value,
+    paragraphIndex: firstLine.paragraphIndex,
+    offsetInParagraph: firstLine.lineStartOffset
+  })
 }
 
 function openCatalog() {
@@ -575,6 +694,7 @@ async function retryLoad() {
           :lines="scrollLines"
           :show-heading="scrollShowHeading"
           :font-size-px="fontSizePx"
+          :highlight-range="audiobookHighlightRange"
         />
       </scroll-view>
     </view>
@@ -607,6 +727,7 @@ async function retryLoad() {
             :lines="item.page.lines"
             :show-heading="item.page.showHeading"
             :font-size-px="fontSizePx"
+            :highlight-range="audiobookHighlightRange"
           />
         </swiper-item>
       </swiper>
@@ -633,6 +754,13 @@ async function retryLoad() {
       @preview-end="clearChapterPreview"
       @seek="seekChapter"
     />
+
+    <ReaderListenButton
+      v-if="toolbarVisible && showReaderControls && !audiobook.visible.value"
+      @start="startAudiobook"
+    />
+
+    <GlobalAudiobookPlayer :placement="toolbarVisible ? 'above-toolbar' : 'default'" />
 
     <ReaderCatalogSheet
       v-if="catalogVisible"

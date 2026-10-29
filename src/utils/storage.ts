@@ -80,6 +80,7 @@ export function updateReadingProgress(input: {
   scrollTop: number
   progress: number
   pageIndex: number
+  coverUrl?: string
   updatedAt?: number
 }) {
   const items = getReadingHistory()
@@ -94,6 +95,7 @@ export function updateReadingProgress(input: {
     scrollTop: Math.max(0, input.scrollTop),
     progress: Math.min(100, Math.max(0, input.progress)),
     pageIndex: Math.max(0, input.pageIndex),
+    coverUrl: input.coverUrl || current.coverUrl,
     updatedAt: input.updatedAt || Date.now()
   }
   const next = [updated, ...items.filter((_, itemIndex) => itemIndex !== index)].slice(

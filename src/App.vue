@@ -4,7 +4,6 @@ import { initializeTheme } from '@/composables/useTheme'
 export default {
   onLaunch() {
     initializeTheme()
-    console.info('西瓜啃书启动')
   }
 }
 </script>
@@ -41,7 +40,6 @@ page {
     -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif;
   font-size: 15px;
   font-weight: 400;
-  text-rendering: optimizeLegibility;
 }
 
 .theme-light {

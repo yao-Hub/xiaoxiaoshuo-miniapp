@@ -95,7 +95,8 @@ export async function login(username: string, password: string) {
   const result = await requestJson<AuthResponse>('/api/auth/login', {
     method: 'POST',
     data: { username, password },
-    timeout: 20000
+    timeout: 20000,
+    showLoading: false
   })
   setAuthSession(result)
   return result.user
@@ -105,16 +106,18 @@ export async function register(username: string, password: string) {
   const result = await requestJson<AuthResponse>('/api/auth/register', {
     method: 'POST',
     data: { username, password },
-    timeout: 20000
+    timeout: 20000,
+    showLoading: false
   })
   setAuthSession(result)
   return result.user
 }
 
-export async function getCurrentUser() {
+export async function getCurrentUser(options: { showLoading?: boolean } = {}) {
   const result = await requestJson<{ user: SessionUser }>('/api/auth/me', {
     token: getAuthToken(),
     timeout: 20000,
+    showLoading: options.showLoading,
     onUnauthorized: clearAuthSession
   })
   uni.setStorageSync('xiaoxiaoshuo.currentUser', result.user)

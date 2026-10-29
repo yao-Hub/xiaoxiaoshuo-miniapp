@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { reactive, ref } from 'vue'
 import { onLoad } from '@dcloudio/uni-app'
+import GlobalAudiobookPlayer from '@/components/audiobook/GlobalAudiobookPlayer.vue'
 import { login, register } from '@/services/auth'
 import { usePageTheme } from '@/composables/useTheme'
 
@@ -136,6 +137,8 @@ function toggleMode() {
       </button>
       <view v-if="mode === 'register'" class="hint"> 注册后即可登录并使用搜索功能。 </view>
     </view>
+
+    <GlobalAudiobookPlayer />
   </view>
 </template>
 

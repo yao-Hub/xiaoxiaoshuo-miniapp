@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import type { ReaderPageLine } from '@/types/reader'
+import { computed } from 'vue'
+import type { ReaderHighlightRange, ReaderPageLine } from '@/types/reader'
 
 const props = defineProps<{
   bookTitle: string
@@ -8,7 +9,34 @@ const props = defineProps<{
   showHeading: boolean
   fontSizePx: number
   flow: 'page' | 'scroll'
+  highlightRange?: ReaderHighlightRange
 }>()
+
+const renderedLines = computed(() =>
+  props.lines.map((line, lineIndex) => {
+    const range = props.highlightRange
+    const rangeStart = range
+      ? Math.max(range.startOffset, line.lineStartOffset)
+      : line.lineStartOffset
+    const rangeEnd = range ? Math.min(range.endOffset, line.lineEndOffset) : line.lineStartOffset
+    const highlighted =
+      Boolean(range) && range?.paragraphIndex === line.paragraphIndex && rangeStart < rangeEnd
+    const indentOffset = line.lineStartOffset === 0 ? 2 : 0
+    const highlightStart = rangeStart - line.lineStartOffset + indentOffset
+    const highlightEnd = rangeEnd - line.lineStartOffset + indentOffset
+    return {
+      key: `${props.flow}-${lineIndex}`,
+      paragraphEnd: line.paragraphEnd,
+      segments: highlighted
+        ? [
+            { text: line.text.slice(0, highlightStart), highlighted: false },
+            { text: line.text.slice(highlightStart, highlightEnd), highlighted: true },
+            { text: line.text.slice(highlightEnd), highlighted: false }
+          ].filter((segment) => segment.text)
+        : [{ text: line.text, highlighted: false }]
+    }
+  })
+)
 </script>
 
 <template>
@@ -23,12 +51,19 @@ const props = defineProps<{
       <view class="divider" />
     </template>
     <view
-      v-for="(line, lineIndex) in props.lines"
-      :key="`${props.flow}-${lineIndex}`"
+      v-for="line in renderedLines"
+      :key="line.key"
       class="reader-line"
       :class="{ 'paragraph-end': line.paragraphEnd }"
     >
-      {{ line.text }}
+      <text class="reader-line-text">
+        <text
+          v-for="(segment, segmentIndex) in line.segments"
+          :key="`${line.key}-${segmentIndex}`"
+          :class="{ 'reader-highlight': segment.highlighted }"
+          >{{ segment.text }}</text
+        >
+      </text>
     </view>
   </view>
 </template>
@@ -84,5 +119,9 @@ const props = defineProps<{
 
 .reader-line.paragraph-end {
   margin-bottom: 30rpx;
+}
+
+.reader-highlight {
+  color: var(--accent);
 }
 </style>

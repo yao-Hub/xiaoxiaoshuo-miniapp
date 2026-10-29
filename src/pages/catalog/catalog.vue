@@ -1,12 +1,14 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import { onLoad } from '@dcloudio/uni-app'
+import GlobalAudiobookPlayer from '@/components/audiobook/GlobalAudiobookPlayer.vue'
 import { getCatalog } from '@/services/novel'
 import { usePageTheme } from '@/composables/useTheme'
 import type { Book, Chapter } from '@/types/novel'
 
 const catalogUrl = ref('')
 const initialTitle = ref('')
+const initialCoverUrl = ref('')
 const book = ref<Book>()
 const chapters = ref<Chapter[]>([])
 const loading = ref(true)
@@ -22,9 +24,13 @@ const visibleChapters = computed(() =>
 onLoad(async (options) => {
   catalogUrl.value = decodeURIComponent(String(options?.url || ''))
   initialTitle.value = decodeURIComponent(String(options?.title || ''))
+  initialCoverUrl.value = decodeURIComponent(String(options?.coverUrl || ''))
   try {
     const catalog = await getCatalog(catalogUrl.value)
-    book.value = catalog.book
+    book.value = {
+      ...catalog.book,
+      coverUrl: catalog.book.coverUrl || initialCoverUrl.value
+    }
     chapters.value = catalog.chapters
     uni.setNavigationBarTitle({ title: catalog.book.title || initialTitle.value })
   } catch (error) {
@@ -36,7 +42,7 @@ onLoad(async (options) => {
 
 function openChapter(chapter: Chapter) {
   uni.navigateTo({
-    url: `/pages/reader/reader?chapterUrl=${encodeURIComponent(chapter.url)}&catalogUrl=${encodeURIComponent(book.value?.catalogUrl || catalogUrl.value)}&bookTitle=${encodeURIComponent(book.value?.title || initialTitle.value)}`
+    url: `/pages/reader/reader?chapterUrl=${encodeURIComponent(chapter.url)}&catalogUrl=${encodeURIComponent(book.value?.catalogUrl || catalogUrl.value)}&bookTitle=${encodeURIComponent(book.value?.title || initialTitle.value)}&coverUrl=${encodeURIComponent(book.value?.coverUrl || initialCoverUrl.value)}`
   })
 }
 </script>
@@ -87,6 +93,8 @@ function openChapter(chapter: Chapter) {
         </button>
       </view>
     </template>
+
+    <GlobalAudiobookPlayer />
   </view>
 </template>
 

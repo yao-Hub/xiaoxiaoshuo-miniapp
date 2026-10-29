@@ -20,6 +20,11 @@ interface AdjacentChapterUrls {
   nextUrl: string
 }
 
+interface MoveToAdjacentChapterOptions {
+  instant?: boolean
+  enterAtStart?: boolean
+}
+
 interface ReaderEngineOptions {
   settings: ReaderSettings
   pageContentHeight: MaybeRefOrGetter<number>
@@ -333,10 +338,14 @@ export function useReaderEngine(options: ReaderEngineOptions) {
     return blocks.value.findIndex((block) => block.chapter.chapterUrl === chapterUrlValue)
   }
 
-  async function moveToAdjacentChapter(direction: 'previous' | 'next', instant = false) {
+  async function moveToAdjacentChapter(
+    direction: 'previous' | 'next',
+    navigation: MoveToAdjacentChapterOptions = {}
+  ) {
     if (interactionLocked.value || loading.value) {
       return false
     }
+    const { instant = false, enterAtStart = direction === 'next' } = navigation
     const targetUrl = direction === 'next' ? nextChapterUrl.value : previousChapterUrl.value
     if (!targetUrl) {
       return false
@@ -352,7 +361,7 @@ export function useReaderEngine(options: ReaderEngineOptions) {
     }
 
     const targetBlock = blocks.value[targetIndex]
-    const targetPageIndex = direction === 'next' ? 0 : Math.max(0, targetBlock.pages.length - 1)
+    const targetPageIndex = enterAtStart ? 0 : Math.max(0, targetBlock.pages.length - 1)
     if (instant) {
       lockInteraction()
     }

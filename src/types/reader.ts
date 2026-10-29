@@ -16,6 +16,9 @@ export interface ReaderPageModeOption {
 export interface ReaderPageLine {
   text: string
   paragraphEnd: boolean
+  paragraphIndex: number
+  lineStartOffset: number
+  lineEndOffset: number
 }
 
 export interface ReaderPageData {
@@ -27,4 +30,10 @@ export interface ReaderChapterBlock {
   chapter: ChapterContent
   pages: ReaderPageData[]
   key: string
+}
+
+export interface ReaderHighlightRange {
+  paragraphIndex: number
+  startOffset: number
+  endOffset: number
 }

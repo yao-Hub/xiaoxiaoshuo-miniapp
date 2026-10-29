@@ -46,22 +46,34 @@ export function estimateTextLines(
   return lines
 }
 
-function wrapParagraph(paragraph: string, capacity: number): string[] {
+interface WrappedLine {
+  text: string
+  startOffset: number
+  endOffset: number
+}
+
+function wrapParagraph(paragraph: string, capacity: number): WrappedLine[] {
   const characters = Array.from(paragraph.trim())
-  const lines: string[] = []
+  const lines: WrappedLine[] = []
   let current = ''
   let usedUnits = 2
+  let currentStartOffset = 0
 
-  characters.forEach((character) => {
+  characters.forEach((character, index) => {
     const units = characterUnits(character)
     const canOverflowForPunctuation = isClosingPunctuation(character) && current.length > 0
 
     if (usedUnits + units > capacity && !canOverflowForPunctuation) {
       if (current.trim()) {
-        lines.push(current)
+        lines.push({
+          text: current,
+          startOffset: currentStartOffset,
+          endOffset: index
+        })
       }
       current = ''
       usedUnits = 0
+      currentStartOffset = index
     }
 
     current += character
@@ -69,9 +81,16 @@ function wrapParagraph(paragraph: string, capacity: number): string[] {
   })
 
   if (current.trim() || !lines.length) {
-    lines.push(current)
+    lines.push({
+      text: current,
+      startOffset: currentStartOffset,
+      endOffset: characters.length
+    })
   }
-  return lines.map((line, index) => (index === 0 ? `\u3000\u3000${line}` : line))
+  return lines.map((line, index) => ({
+    ...line,
+    text: index === 0 ? `\u3000\u3000${line.text}` : line.text
+  }))
 }
 
 export function splitChapterParagraphs(content: string) {
@@ -105,7 +124,7 @@ export function buildReaderPages(
     remainingHeight = layout.pageHeightPx
   }
 
-  source.forEach((paragraph) => {
+  source.forEach((paragraph, paragraphIndex) => {
     const paragraphLines = wrapParagraph(paragraph, lineCapacity)
     paragraphLines.forEach((text, lineIndex) => {
       const isLastLine = lineIndex === paragraphLines.length - 1
@@ -115,8 +134,11 @@ export function buildReaderPages(
       }
 
       currentLines.push({
-        text,
-        paragraphEnd: isLastLine
+        text: text.text,
+        paragraphEnd: isLastLine,
+        paragraphIndex,
+        lineStartOffset: text.startOffset,
+        lineEndOffset: text.endOffset
       })
       remainingHeight -= lineHeightPx
       if (isLastLine && remainingHeight >= layout.paragraphGapPx) {

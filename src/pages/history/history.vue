@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref } from 'vue'
 import { onShow } from '@dcloudio/uni-app'
+import GlobalAudiobookPlayer from '@/components/audiobook/GlobalAudiobookPlayer.vue'
 import {
   clearReadingHistory,
   clearSearchHistory,
@@ -29,7 +30,7 @@ function refresh() {
 
 function openReading(item: ReadingHistoryItem) {
   openProtectedPage(
-    `/pages/reader/reader?chapterUrl=${encodeURIComponent(item.chapterUrl)}&catalogUrl=${encodeURIComponent(item.catalogUrl)}&bookTitle=${encodeURIComponent(item.bookTitle)}`
+    `/pages/reader/reader?chapterUrl=${encodeURIComponent(item.chapterUrl)}&catalogUrl=${encodeURIComponent(item.catalogUrl)}&bookTitle=${encodeURIComponent(item.bookTitle)}&coverUrl=${encodeURIComponent(item.coverUrl || '')}`
   )
 }
 
@@ -132,6 +133,8 @@ function formatTime(timestamp: number) {
         <button class="delete-button" @tap="deleteSearch(item)">删除</button>
       </view>
     </view>
+
+    <GlobalAudiobookPlayer placement="above-tab" />
   </view>
 </template>
 

@@ -51,11 +51,7 @@ function goNext() {
 <template>
   <view class="reader-bottom-bar" @tap.stop>
     <view class="chapter-progress-row">
-      <view
-        class="chapter-arrow"
-        :class="{ disabled: props.previousDisabled }"
-        @tap="goPrevious"
-      >
+      <view class="chapter-arrow" :class="{ disabled: props.previousDisabled }" @tap="goPrevious">
         ‹ 上一章
       </view>
 
@@ -84,11 +80,7 @@ function goNext() {
         />
       </view>
 
-      <view
-        class="chapter-arrow next"
-        :class="{ disabled: props.nextDisabled }"
-        @tap="goNext"
-      >
+      <view class="chapter-arrow next" :class="{ disabled: props.nextDisabled }" @tap="goNext">
         下一章 ›
       </view>
     </view>

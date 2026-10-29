@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import { onShow } from '@dcloudio/uni-app'
+import GlobalAudiobookPlayer from '@/components/audiobook/GlobalAudiobookPlayer.vue'
 import {
   getAuthToken,
   getCachedUser,
@@ -51,7 +52,7 @@ onShow(async () => {
     return
   }
   try {
-    user.value = await getCurrentUser()
+    user.value = await getCurrentUser({ showLoading: false })
   } catch (error) {
     errorMessage.value = error instanceof Error ? error.message : String(error)
   }
@@ -117,6 +118,8 @@ function openLogin() {
     <view v-if="errorMessage" class="status-tip error">{{ errorMessage }}</view>
     <button v-if="loggedIn" class="logout-button" @tap="logout">退出登录</button>
     <button v-else class="login-button" @tap="openLogin">登录 / 注册</button>
+
+    <GlobalAudiobookPlayer placement="above-tab" />
   </view>
 </template>
 

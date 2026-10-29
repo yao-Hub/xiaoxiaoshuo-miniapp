@@ -7,6 +7,7 @@ interface ReaderCatalogOptions {
   catalogUrl: Ref<string>
   currentChapterUrl: Ref<string>
   bookTitle: Ref<string>
+  fallbackCoverUrl?: Ref<string>
 }
 
 export function useReaderCatalog(options: ReaderCatalogOptions) {
@@ -15,6 +16,7 @@ export function useReaderCatalog(options: ReaderCatalogOptions) {
   const errorMessage = ref('')
   const visible = ref(false)
   const dragPreviewIndex = ref<number>()
+  const bookCoverUrl = ref('')
   let activeRequestId = 0
 
   watch(
@@ -25,6 +27,7 @@ export function useReaderCatalog(options: ReaderCatalogOptions) {
       errorMessage.value = ''
       loading.value = false
       dragPreviewIndex.value = undefined
+      bookCoverUrl.value = options.fallbackCoverUrl?.value || ''
     },
     { flush: 'sync' }
   )
@@ -68,6 +71,7 @@ export function useReaderCatalog(options: ReaderCatalogOptions) {
       }
       chapters.value = catalog.chapters
       options.bookTitle.value = catalog.book.title || options.bookTitle.value
+      bookCoverUrl.value = catalog.book.coverUrl || options.fallbackCoverUrl?.value || ''
     } catch (error) {
       if (requestId !== activeRequestId || options.catalogUrl.value !== currentUrl) {
         return
@@ -120,6 +124,7 @@ export function useReaderCatalog(options: ReaderCatalogOptions) {
     errorMessage,
     visible,
     dragPreviewIndex,
+    bookCoverUrl,
     currentChapterIndex,
     sliderValue,
     sliderMax,
