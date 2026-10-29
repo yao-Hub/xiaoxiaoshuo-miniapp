@@ -91,6 +91,7 @@ export function useReaderCatalog(options: ReaderCatalogOptions) {
 
   function closeCatalog() {
     visible.value = false
+    dragPreviewIndex.value = undefined
   }
 
   function retryCatalog() {
@@ -107,6 +108,10 @@ export function useReaderCatalog(options: ReaderCatalogOptions) {
   function resolveChapterAt(index: number) {
     dragPreviewIndex.value = undefined
     return chapters.value[Math.round(index)]
+  }
+
+  function clearChapterPreview() {
+    dragPreviewIndex.value = undefined
   }
 
   return {
@@ -126,6 +131,7 @@ export function useReaderCatalog(options: ReaderCatalogOptions) {
     closeCatalog,
     retryCatalog,
     previewChapter,
+    clearChapterPreview,
     resolveChapterAt
   }
 }

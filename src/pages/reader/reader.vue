@@ -1,15 +1,13 @@
 <script setup lang="ts">
-import { computed, reactive, ref } from 'vue'
+import { computed, reactive, ref, watch } from 'vue'
 import { onHide, onLoad, onUnload } from '@dcloudio/uni-app'
 import ReaderBottomBar from '@/components/reader/ReaderBottomBar.vue'
 import ReaderCatalogSheet from '@/components/reader/ReaderCatalogSheet.vue'
 import ReaderChapterContent from '@/components/reader/ReaderChapterContent.vue'
 import ReaderSettingsSheet from '@/components/reader/ReaderSettingsSheet.vue'
 import ReaderTopBar from '@/components/reader/ReaderTopBar.vue'
-import { useAdjacentChapterPreviews } from '@/composables/useAdjacentChapterPreviews'
 import { useReaderCatalog } from '@/composables/useReaderCatalog'
-import { useReaderChapter } from '@/composables/useReaderChapter'
-import { useReaderPagination, type ReaderRestorePosition } from '@/composables/useReaderPagination'
+import { useReaderEngine } from '@/composables/useReaderEngine'
 import { useReaderViewport } from '@/composables/useReaderViewport'
 import { usePageTheme } from '@/composables/useTheme'
 import {
@@ -19,8 +17,8 @@ import {
   READER_FONT_SIZE_MIN
 } from '@/constants/reader'
 import { getAuthToken, openLoginPage } from '@/services/auth'
-import type { Chapter } from '@/types/novel'
-import type { ReaderPageData, ReaderPageMode, ReaderSettings } from '@/types/reader'
+import type { Chapter, ChapterContent } from '@/types/novel'
+import type { ReaderPageMode, ReaderSettings } from '@/types/reader'
 import { resolveHorizontalReaderTapZone, resolveReaderTapZone } from '@/utils/reader-interaction'
 import {
   getReaderSettings,
@@ -30,7 +28,7 @@ import {
   updateReadingProgress
 } from '@/utils/storage'
 
-interface SwiperChangeEvent {
+interface SwiperFinishEvent {
   detail: {
     current: number
   }
@@ -42,36 +40,55 @@ interface ReaderScrollEvent {
   }
 }
 
-interface ReaderSwiperPage {
-  key: string
-  chapterTitle: string
-  page: ReaderPageData
-}
-
 const readerSettings = reactive<ReaderSettings>(getReaderSettings())
 const viewport = useReaderViewport()
-const pagination = useReaderPagination({
+const readerEngine = useReaderEngine({
   settings: readerSettings,
   pageContentHeight: viewport.pageContentHeight,
   pageViewportHeight: viewport.pageViewportHeight,
-  textWidthPx: viewport.textWidthPx
+  textWidthPx: viewport.textWidthPx,
+  getAdjacentUrls: resolveAdjacentUrls,
+  onChapterCommitted: handleChapterCommitted
 })
-const { themeClass, resolvedTheme, toggleResolvedTheme } = usePageTheme()
-const previews = useAdjacentChapterPreviews(pagination.buildPagesForChapter)
-const readerChapter = useReaderChapter()
 const {
-  chapterUrl,
-  requestedChapterUrl,
-  catalogUrl,
-  bookTitle,
+  windowKey,
   chapter,
+  chapterUrl,
+  catalogUrl,
+  requestedChapterUrl,
+  readerPages,
+  currentPageIndex,
+  currentSwiperIndex,
+  swiperPages,
+  previousChapterUrl,
+  nextChapterUrl,
   loading,
   errorMessage,
-  loadChapter: requestChapter,
+  interactionLocked,
+  fontSizePx,
+  scrollReaderTop,
+  scrollRestoreTop,
+  scrollLines,
+  scrollShowHeading,
+  loadDirectChapter,
+  refreshWindow,
+  commitSwiperIndex,
+  moveToAdjacentChapter,
+  turnPage,
+  setPageIndex,
+  rebuildPages,
+  setScrollPosition,
+  estimatePageScrollTop,
+  syncPageIndexFromScroll,
+  getReadingProgress,
   cancelPendingLoad
-} = readerChapter
+} = readerEngine
+
+const bookTitle = ref('')
+const fallbackCatalogUrl = ref('')
+const effectiveCatalogUrl = computed(() => catalogUrl.value || fallbackCatalogUrl.value)
 const readerCatalog = useReaderCatalog({
-  catalogUrl,
+  catalogUrl: effectiveCatalogUrl,
   currentChapterUrl: chapterUrl,
   bookTitle
 })
@@ -92,93 +109,53 @@ const {
   closeCatalog,
   retryCatalog,
   previewChapter,
+  clearChapterPreview,
   resolveChapterAt
 } = readerCatalog
-const {
-  readerPages,
-  currentPageIndex,
-  scrollReaderTop,
-  scrollRestoreTop,
-  fontSizePx,
-  scrollLines,
-  scrollShowHeading,
-  setChapterPages,
-  setScrollPosition,
-  estimatePageScrollTop,
-  syncPageIndexFromScroll,
-  getReadingProgress
-} = pagination
-const {
-  previousPreviewPage,
-  nextPreviewPage,
-  clear: clearPreviews,
-  prefetch: prefetchPreviews
-} = previews
 
+const { themeClass, resolvedTheme, toggleResolvedTheme } = usePageTheme()
 const toolbarVisible = ref(false)
 const settingsVisible = ref(false)
+const catalogAutoLocate = ref(false)
+const catalogAutoLocatedOnce = ref(false)
 let tapStartX = 0
 let tapStartY = 0
 let settingsSaveTimer: ReturnType<typeof setTimeout> | undefined
 let lastScrollPersistAt = 0
 let lastReaderScrollAt = 0
+let lastCommittedChapterUrl = ''
 
+const fatalError = computed(() => Boolean(errorMessage.value) && !chapter.value)
+const showTopBar = computed(() => toolbarVisible.value || loading.value || fatalError.value)
+const showReaderControls = computed(
+  () => Boolean(chapter.value) && swiperPages.value.length > 0 && !fatalError.value
+)
 const brightnessOverlayStyle = computed(() => ({
   opacity: String((100 - readerSettings.brightness) / 100)
 }))
-const showTopBar = computed(
-  () => toolbarVisible.value || loading.value || Boolean(errorMessage.value)
+
+watch(
+  () => catalogChapters.value.length,
+  (chapterCount) => {
+    if (chapterCount && chapter.value) {
+      void refreshWindow()
+    }
+  }
 )
-const showReaderControls = computed(
-  () => Boolean(chapter.value) && !loading.value && !errorMessage.value
-)
-const swiperPages = computed<ReaderSwiperPage[]>(() => {
-  if (!chapter.value) {
-    return []
-  }
-  const items: ReaderSwiperPage[] = []
-  if (previousPreviewPage.value) {
-    items.push({
-      key: `preview-${previousPreviewPage.value.chapter.chapterUrl}`,
-      chapterTitle: previousPreviewPage.value.chapter.title,
-      page: previousPreviewPage.value.page
-    })
-  }
-  readerPages.value.forEach((page, pageIndex) => {
-    items.push({
-      key: `${chapter.value?.chapterUrl}-${pageIndex}`,
-      chapterTitle: chapter.value?.title || '',
-      page
-    })
-  })
-  if (nextPreviewPage.value) {
-    items.push({
-      key: `preview-${nextPreviewPage.value.chapter.chapterUrl}`,
-      chapterTitle: nextPreviewPage.value.chapter.title,
-      page: nextPreviewPage.value.page
-    })
-  }
-  return items
-})
-const previousPreviewOffset = computed(() => (previousPreviewPage.value ? 1 : 0))
-const currentSwiperIndex = computed(() => previousPreviewOffset.value + currentPageIndex.value)
 
 onLoad(async (options) => {
-  chapterUrl.value = decodeURIComponent(String(options?.chapterUrl || ''))
-  requestedChapterUrl.value = chapterUrl.value
-  catalogUrl.value = decodeURIComponent(String(options?.catalogUrl || ''))
+  const initialChapterUrl = decodeURIComponent(String(options?.chapterUrl || ''))
+  fallbackCatalogUrl.value = decodeURIComponent(String(options?.catalogUrl || ''))
   bookTitle.value = decodeURIComponent(String(options?.bookTitle || ''))
 
-  if (!chapterUrl.value) {
-    await requestChapter('')
-    return
-  }
-
-  const savedRecord = getReadingRecord(chapterUrl.value)
-  await openChapter(chapterUrl.value, {
+  const savedRecord = initialChapterUrl ? getReadingRecord(initialChapterUrl) : undefined
+  const succeeded = await loadDirectChapter(initialChapterUrl, {
     pageIndex: savedRecord?.pageIndex || 0,
     scrollTop: savedRecord?.scrollTop || 0
   })
+  if (succeeded) {
+    void ensureCatalog().then(() => refreshWindow())
+  }
 })
 
 onHide(() => {
@@ -196,36 +173,39 @@ onUnload(() => {
   }
 })
 
-async function openChapter(targetUrl: string, restore: ReaderRestorePosition) {
-  if (!targetUrl) {
-    await requestChapter('')
-    return false
+function resolveAdjacentUrls(sourceChapter: ChapterContent) {
+  const chapterIndex = catalogChapters.value.findIndex(
+    (item) => item.url === sourceChapter.chapterUrl
+  )
+  if (catalogChapters.value.length && chapterIndex >= 0) {
+    return {
+      previousUrl: catalogChapters.value[chapterIndex - 1]?.url || '',
+      nextUrl: catalogChapters.value[chapterIndex + 1]?.url || ''
+    }
   }
-  if (chapter.value && chapter.value.chapterUrl !== targetUrl) {
-    persistReadingProgress()
+  return {
+    previousUrl: sourceChapter.prevUrl,
+    nextUrl: sourceChapter.nextUrl
   }
-  clearPreviews()
-  const nextChapter = await requestChapter(targetUrl)
-  if (!nextChapter) {
-    return false
-  }
+}
 
-  rememberReading({
-    key: nextChapter.catalogUrl || nextChapter.chapterUrl,
-    bookTitle: bookTitle.value || '未命名作品',
-    chapterTitle: nextChapter.title,
-    chapterUrl: nextChapter.chapterUrl,
-    catalogUrl: nextChapter.catalogUrl,
-    scrollTop: Math.max(0, restore.scrollTop || 0),
-    pageIndex: restore.pageIndex === 'last' ? 0 : Math.max(0, restore.pageIndex),
-    progress: 0,
-    updatedAt: Date.now()
-  })
-  setChapterPages(nextChapter, restore)
+function handleChapterCommitted(targetChapter: ChapterContent, pageIndex: number) {
+  clearChapterPreview()
+  if (lastCommittedChapterUrl !== targetChapter.chapterUrl) {
+    lastCommittedChapterUrl = targetChapter.chapterUrl
+    rememberReading({
+      key: targetChapter.catalogUrl || targetChapter.chapterUrl,
+      bookTitle: bookTitle.value || '未命名作品',
+      chapterTitle: targetChapter.title,
+      chapterUrl: targetChapter.chapterUrl,
+      catalogUrl: targetChapter.catalogUrl,
+      scrollTop: readerSettings.pageMode === 'scroll' ? scrollReaderTop.value : 0,
+      pageIndex,
+      progress: 0,
+      updatedAt: Date.now()
+    })
+  }
   persistReadingProgress()
-  void prefetchPreviews(nextChapter)
-  void ensureCatalog()
-  return true
 }
 
 function persistReadingProgress() {
@@ -241,27 +221,12 @@ function persistReadingProgress() {
   })
 }
 
-function handleSwiperChange(event: SwiperChangeEvent) {
+function handleSwiperFinish(event: SwiperFinishEvent) {
   const nextIndex = Number(event.detail.current)
   if (!Number.isFinite(nextIndex)) {
     return
   }
-  if (loading.value || nextIndex === currentSwiperIndex.value) {
-    return
-  }
-  if (previousPreviewPage.value && nextIndex === 0) {
-    void openChapter(previousPreviewPage.value.chapter.chapterUrl, { pageIndex: 'last' })
-    return
-  }
-  if (nextPreviewPage.value && nextIndex === swiperPages.value.length - 1) {
-    void openChapter(nextPreviewPage.value.chapter.chapterUrl, { pageIndex: 0 })
-    return
-  }
-  currentPageIndex.value = Math.min(
-    Math.max(0, nextIndex - previousPreviewOffset.value),
-    Math.max(0, readerPages.value.length - 1)
-  )
-  persistReadingProgress()
+  void commitSwiperIndex(nextIndex)
 }
 
 function handleScrollModeScroll(event: ReaderScrollEvent) {
@@ -323,6 +288,9 @@ function extractTapY(event: MouseEvent | TouchEvent) {
 }
 
 function handleReaderTap(event: MouseEvent | TouchEvent) {
+  if (interactionLocked.value || loading.value) {
+    return
+  }
   if (toolbarVisible.value) {
     toolbarVisible.value = false
     return
@@ -352,59 +320,59 @@ function handleReaderTap(event: MouseEvent | TouchEvent) {
     toolbarVisible.value = true
     return
   }
-  turnReaderPage(zone === 'previous' ? -1 : 1)
+  void turnReaderPage(zone === 'previous' ? -1 : 1)
 }
 
-function turnReaderPage(direction: -1 | 1) {
-  if (direction > 0 && currentPageIndex.value >= readerPages.value.length - 1) {
-    if (chapter.value?.nextUrl) {
-      void openChapter(chapter.value.nextUrl, { pageIndex: 0 })
-    } else {
-      uni.showToast({ title: '已经是最后一章', icon: 'none' })
-    }
+async function turnReaderPage(direction: -1 | 1) {
+  const succeeded = await turnPage(direction)
+  if (succeeded) {
     return
   }
-
-  if (direction < 0 && currentPageIndex.value <= 0) {
-    if (chapter.value?.prevUrl) {
-      void openChapter(chapter.value.prevUrl, { pageIndex: 'last' })
-    } else {
-      uni.showToast({ title: '已经是第一章', icon: 'none' })
-    }
-    return
-  }
-
-  currentPageIndex.value = Math.min(
-    Math.max(0, currentPageIndex.value + direction),
-    Math.max(0, readerPages.value.length - 1)
-  )
-  persistReadingProgress()
+  const hasAdjacentChapter =
+    direction > 0 ? Boolean(nextChapterUrl.value) : Boolean(previousChapterUrl.value)
+  uni.showToast({
+    title: hasAdjacentChapter
+      ? direction > 0
+        ? '下一章暂时无法加载'
+        : '上一章暂时无法加载'
+      : direction > 0
+        ? '已经是最后一章'
+        : '已经是第一章',
+    icon: 'none'
+  })
 }
 
-function openCatalog() {
-  persistReadingProgress()
-  showCatalog()
-}
-
-function selectCatalogChapter(targetChapter: Chapter) {
+async function selectCatalogChapter(targetChapter: Chapter) {
   closeCatalog()
   if (targetChapter.url === chapterUrl.value) {
-    currentPageIndex.value = 0
+    setPageIndex(0)
     if (readerSettings.pageMode === 'scroll') {
       setScrollPosition(0)
     }
-    persistReadingProgress()
     return
   }
-  void openChapter(targetChapter.url, { pageIndex: 0 })
+  await loadSelectedChapter(targetChapter.url)
 }
 
-function seekChapter(index: number) {
+async function seekChapter(index: number) {
+  clearChapterPreview()
   const targetChapter = resolveChapterAt(index)
   if (!targetChapter || targetChapter.url === chapterUrl.value) {
     return
   }
-  void openChapter(targetChapter.url, { pageIndex: 0 })
+  await loadSelectedChapter(targetChapter.url)
+}
+
+async function loadSelectedChapter(targetUrl: string) {
+  const succeeded = await loadDirectChapter(targetUrl, { pageIndex: 0 })
+  if (succeeded) {
+    void ensureCatalog().then(() => refreshWindow())
+    return
+  }
+  if (chapter.value) {
+    uni.showToast({ title: errorMessage.value || '章节加载失败', icon: 'none' })
+    errorMessage.value = ''
+  }
 }
 
 function goBack() {
@@ -429,19 +397,21 @@ function goHome() {
 }
 
 function openPreviousChapter() {
-  if (chapter.value?.prevUrl) {
-    void openChapter(chapter.value.prevUrl, { pageIndex: 0 })
-  }
+  void moveToAdjacentChapter('previous')
 }
 
 function openNextChapter() {
-  if (chapter.value?.nextUrl) {
-    void openChapter(chapter.value.nextUrl, { pageIndex: 0 })
-  }
+  void moveToAdjacentChapter('next')
 }
 
 function openSettings() {
   settingsVisible.value = true
+}
+
+function openCatalog() {
+  catalogAutoLocate.value = !catalogAutoLocatedOnce.value
+  catalogAutoLocatedOnce.value = true
+  showCatalog()
 }
 
 function closeSettings() {
@@ -452,17 +422,8 @@ function closeSettings() {
 function changeFontSize(value: number) {
   readerSettings.fontSize = Math.min(READER_FONT_SIZE_MAX, Math.max(READER_FONT_SIZE_MIN, value))
   if (chapter.value) {
-    setChapterPages(
-      chapter.value,
-      {
-        pageIndex: currentPageIndex.value,
-        scrollTop: scrollReaderTop.value
-      },
-      true
-    )
-    void prefetchPreviews(chapter.value)
+    rebuildPages()
   }
-  persistReadingProgress()
   persistReaderSettings()
 }
 
@@ -491,17 +452,10 @@ function resetReaderSettings() {
   const fontSizeChanged = readerSettings.fontSize !== DEFAULT_READER_SETTINGS.fontSize
   Object.assign(readerSettings, DEFAULT_READER_SETTINGS)
   if (chapter.value && fontSizeChanged) {
-    setChapterPages(
-      chapter.value,
-      {
-        pageIndex: currentPageIndex.value,
-        scrollTop: scrollReaderTop.value
-      },
-      true
-    )
-    void prefetchPreviews(chapter.value)
+    rebuildPages()
+  } else if (readerSettings.pageMode === 'scroll') {
+    setScrollPosition(estimatePageScrollTop(currentPageIndex.value))
   }
-  persistReadingProgress()
   persistReaderSettings()
 }
 
@@ -530,7 +484,7 @@ async function retryLoad() {
     return
   }
   if (!getAuthToken()) {
-    const redirectUrl = `/pages/reader/reader?chapterUrl=${encodeURIComponent(targetUrl)}&catalogUrl=${encodeURIComponent(catalogUrl.value)}&bookTitle=${encodeURIComponent(bookTitle.value)}`
+    const redirectUrl = `/pages/reader/reader?chapterUrl=${encodeURIComponent(targetUrl)}&catalogUrl=${encodeURIComponent(effectiveCatalogUrl.value)}&bookTitle=${encodeURIComponent(bookTitle.value)}`
     uni.showModal({
       title: '登录状态已失效',
       content: '请重新登录后继续阅读。',
@@ -547,12 +501,14 @@ async function retryLoad() {
 
   const isCurrentChapter = targetUrl === chapterUrl.value
   uni.showLoading({ title: '正在重新加载', mask: true })
-  const succeeded = await openChapter(targetUrl, {
+  const succeeded = await loadDirectChapter(targetUrl, {
     pageIndex: isCurrentChapter ? currentPageIndex.value : 0,
     scrollTop: isCurrentChapter ? scrollReaderTop.value : 0
   })
   uni.hideLoading()
-  if (!succeeded) {
+  if (succeeded) {
+    void ensureCatalog().then(() => refreshWindow())
+  } else {
     uni.showToast({
       title: errorMessage.value || '加载失败，请稍后重试',
       icon: 'none'
@@ -570,7 +526,7 @@ async function retryLoad() {
     <ReaderTopBar
       v-if="showTopBar"
       :book-title="bookTitle"
-      :chapter-title="loading ? '正在加载' : errorMessage ? '读取失败' : chapter?.title || ''"
+      :chapter-title="loading ? '正在加载' : fatalError ? '读取失败' : chapter?.title || ''"
       :top-inset="viewport.topInset.value"
       :right-inset="viewport.rightInset.value"
       @back="goBack"
@@ -582,13 +538,18 @@ async function retryLoad() {
       <view class="state-description">正在整理章节内容，请稍候。</view>
     </view>
 
-    <view v-else-if="errorMessage" class="reader-state">
+    <view v-else-if="fatalError" class="reader-state">
       <view class="state-title">正文加载失败</view>
       <view class="state-description">{{ errorMessage }}</view>
       <view class="state-actions">
         <button class="state-button" @tap.stop="goBack">返回</button>
         <button class="state-button primary" @tap.stop="retryLoad">重新加载</button>
       </view>
+    </view>
+
+    <view v-else-if="chapter && !swiperPages.length" class="reader-state">
+      <view class="state-title">正在准备正文</view>
+      <view class="state-description">请稍候，正在生成阅读页面。</view>
     </view>
 
     <view
@@ -627,14 +588,16 @@ async function retryLoad() {
       }"
     >
       <swiper
+        :key="windowKey"
         class="reader-swiper"
         :style="{ height: `${viewport.pageViewportHeight.value}px` }"
         :current="currentSwiperIndex"
         :vertical="readerSettings.pageMode === 'vertical'"
-        :duration="260"
+        :duration="interactionLocked ? 0 : 260"
+        :disable-touch="interactionLocked || loading"
         @tap="handleReaderTap"
         @touchstart="captureReaderTouch"
-        @change="handleSwiperChange"
+        @animationfinish="handleSwiperFinish"
       >
         <swiper-item v-for="item in swiperPages" :key="item.key">
           <ReaderChapterContent
@@ -659,14 +622,15 @@ async function retryLoad() {
       :preview-title="previewChapterTitle"
       :preview-progress="previewProgress"
       :theme="resolvedTheme"
-      :previous-disabled="!chapter?.prevUrl"
-      :next-disabled="!chapter?.nextUrl"
+      :previous-disabled="interactionLocked || loading || !previousChapterUrl"
+      :next-disabled="interactionLocked || loading || !nextChapterUrl"
       @previous="openPreviousChapter"
       @next="openNextChapter"
       @catalog="openCatalog"
       @settings="openSettings"
       @toggle-theme="toggleResolvedTheme"
       @preview="previewChapter"
+      @preview-end="clearChapterPreview"
       @seek="seekChapter"
     />
 
@@ -677,6 +641,7 @@ async function retryLoad() {
       :current-url="chapterUrl"
       :loading="catalogLoading"
       :error-message="catalogError"
+      :auto-locate="catalogAutoLocate"
       @close="closeCatalog"
       @retry="retryCatalog"
       @select="selectCatalogChapter"

@@ -23,6 +23,7 @@ const emit = defineEmits<{
   settings: []
   toggleTheme: []
   preview: [index: number]
+  previewEnd: []
   seek: [index: number]
 }>()
 
@@ -33,19 +34,30 @@ const tooltipLeft = computed(() => `${Math.min(84, Math.max(16, props.previewPro
 function handleSliderChange(event: { detail: { value: number } }) {
   emit('seek', event.detail.value)
 }
+
+function goPrevious() {
+  if (!props.previousDisabled) {
+    emit('previous')
+  }
+}
+
+function goNext() {
+  if (!props.nextDisabled) {
+    emit('next')
+  }
+}
 </script>
 
 <template>
   <view class="reader-bottom-bar" @tap.stop>
     <view class="chapter-progress-row">
-      <button
+      <view
         class="chapter-arrow"
-        :disabled="props.previousDisabled"
-        aria-label="上一章"
-        @tap="emit('previous')"
+        :class="{ disabled: props.previousDisabled }"
+        @tap="goPrevious"
       >
         ‹ 上一章
-      </button>
+      </view>
 
       <view class="slider-shell">
         <view v-if="props.previewing" class="chapter-preview" :style="{ left: tooltipLeft }">
@@ -68,17 +80,17 @@ function handleSliderChange(event: { detail: { value: number } }) {
           :block-size="22"
           @changing="emit('preview', $event.detail.value)"
           @change="handleSliderChange"
+          @touchend="emit('previewEnd')"
         />
       </view>
 
-      <button
+      <view
         class="chapter-arrow next"
-        :disabled="props.nextDisabled"
-        aria-label="下一章"
-        @tap="emit('next')"
+        :class="{ disabled: props.nextDisabled }"
+        @tap="goNext"
       >
         下一章 ›
-      </button>
+      </view>
     </view>
 
     <view class="bottom-actions">
@@ -113,37 +125,36 @@ function handleSliderChange(event: { detail: { value: number } }) {
 }
 
 .chapter-progress-row {
-  display: grid;
-  grid-template-columns: 138rpx minmax(0, 1fr) 138rpx;
+  display: flex;
   align-items: center;
-  gap: 12rpx;
-  min-height: 58rpx;
+  gap: 48rpx;
+  min-height: 72rpx;
+  padding-bottom: 8rpx;
 }
 
 .chapter-arrow {
   display: flex;
-  height: 58rpx;
+  flex: 0 0 auto;
+  height: auto;
+  min-height: 48rpx;
   margin: 0;
   padding: 0;
   align-items: center;
+  justify-content: center;
   color: var(--reader-ink);
-  background: transparent;
   font-size: 28rpx;
-  line-height: 58rpx;
+  line-height: 1.2;
+  text-align: center;
 }
 
-.chapter-arrow.next {
-  justify-content: flex-end;
-  text-align: right;
-}
-
-.chapter-arrow[disabled] {
+.chapter-arrow.disabled {
   color: var(--muted);
   opacity: 0.42;
 }
 
 .slider-shell {
   position: relative;
+  flex: 1;
   min-width: 0;
 }
 
@@ -162,13 +173,15 @@ function handleSliderChange(event: { detail: { value: number } }) {
 
 .chapter-preview {
   position: absolute;
-  top: -74rpx;
+  bottom: calc(50% + 20px);
+  z-index: 2;
   width: 300rpx;
   padding: 14rpx 18rpx;
   color: #fff7e8;
   background: rgba(58, 52, 40, 0.94);
   border-radius: 18rpx;
   box-shadow: 0 12rpx 34rpx rgba(0, 0, 0, 0.24);
+  pointer-events: none;
   text-align: center;
   transform: translateX(-50%);
 }
@@ -190,7 +203,7 @@ function handleSliderChange(event: { detail: { value: number } }) {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 24rpx;
-  margin-top: 20rpx;
+  margin-top: 12rpx;
 }
 
 .bottom-action {

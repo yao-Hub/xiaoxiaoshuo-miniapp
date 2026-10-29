@@ -1,3 +1,5 @@
+import type { ChapterContent } from '@/types/novel'
+
 export type ReaderPageMode = 'vertical' | 'horizontal' | 'scroll'
 
 export interface ReaderSettings {
@@ -19,4 +21,10 @@ export interface ReaderPageLine {
 export interface ReaderPageData {
   lines: ReaderPageLine[]
   showHeading: boolean
+}
+
+export interface ReaderChapterBlock {
+  chapter: ChapterContent
+  pages: ReaderPageData[]
+  key: string
 }
