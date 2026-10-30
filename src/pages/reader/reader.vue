@@ -23,8 +23,12 @@ import {
 import { getAuthToken, openLoginPage } from '@/services/auth'
 import { trackAnalyticsEvent } from '@/services/analytics'
 import type { Chapter, ChapterContent } from '@/types/novel'
-import type { ReaderPageMode, ReaderSettings } from '@/types/reader'
-import { getReaderLineAbsoluteOffset, splitChapterParagraphs } from '@/utils/pagination'
+import type { ReaderHighlightRange, ReaderPageMode, ReaderSettings } from '@/types/reader'
+import {
+  getReaderLineAbsoluteOffset,
+  resolveReaderParagraphOffset,
+  splitChapterParagraphs
+} from '@/utils/pagination'
 import { resolveHorizontalReaderTapZone, resolveReaderTapZone } from '@/utils/reader-interaction'
 import {
   getReaderSettings,
@@ -159,6 +163,62 @@ const showReaderControls = computed(
 )
 const chapterParagraphs = computed(() =>
   chapter.value ? splitChapterParagraphs(chapter.value.content) : []
+)
+const chapterFullText = computed(() => chapterParagraphs.value.join('\n\n'))
+const audiobookHighlightRanges = ref<ReaderHighlightRange[]>()
+watch(
+  [
+    audiobook.activeTimeline,
+    audiobook.chapterUrl,
+    audiobook.visible,
+    chapterUrl,
+    chapterFullText
+  ],
+  ([timing, playbackChapterUrl, visible, displayedChapterUrl, fullText]) => {
+    if (!visible || playbackChapterUrl !== displayedChapterUrl) {
+      audiobookHighlightRanges.value = undefined
+      return
+    }
+    if (
+      !timing ||
+      timing.text !==
+        fullText.slice(timing.startOffset, timing.endOffset).replace(/[\r\n\u2028\u2029]/g, '')
+    ) {
+      return
+    }
+    const ranges: ReaderHighlightRange[] = []
+    let cursor = timing.startOffset
+    while (cursor < timing.endOffset) {
+      const location = resolveReaderParagraphOffset(chapterParagraphs.value, cursor)
+      const paragraph = location ? chapterParagraphs.value[location.paragraphIndex] : undefined
+      if (!location || !paragraph) {
+        break
+      }
+      const startOffset = location.startOffset
+      const available = paragraph.length - startOffset
+      const paragraphStart =
+        getReaderLineAbsoluteOffset(chapterParagraphs.value, {
+          paragraphIndex: location.paragraphIndex,
+          lineStartOffset: 0
+        })
+      const take = Math.min(available, timing.endOffset - cursor)
+      if (take <= 0) {
+        break
+      }
+      ranges.push({
+        paragraphIndex: location.paragraphIndex,
+        startOffset,
+        endOffset: startOffset + take
+      })
+      cursor = paragraphStart + startOffset + take
+      if (cursor < timing.endOffset) {
+        cursor += 2
+      }
+    }
+    if (ranges.length) {
+      audiobookHighlightRanges.value = ranges
+    }
+  }
 )
 const brightnessOverlayStyle = computed(() => ({
   opacity: String((100 - readerSettings.brightness) / 100)
@@ -641,6 +701,7 @@ async function retryLoad() {
           :lines="scrollLines"
           :show-heading="scrollShowHeading"
           :font-size-px="fontSizePx"
+          :highlight-ranges="audiobookHighlightRanges"
         />
       </scroll-view>
     </view>
@@ -673,6 +734,7 @@ async function retryLoad() {
             :lines="item.page.lines"
             :show-heading="item.page.showHeading"
             :font-size-px="fontSizePx"
+            :highlight-ranges="audiobookHighlightRanges"
           />
         </swiper-item>
       </swiper>

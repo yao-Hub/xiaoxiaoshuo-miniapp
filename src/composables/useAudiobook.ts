@@ -1,5 +1,5 @@
-import { ref } from 'vue'
-import type { TtsChapterAudio } from '@/types/tts'
+import { computed, ref, shallowRef } from 'vue'
+import type { TtsChapterAudio, TtsTimelineEntry } from '@/types/tts'
 import { useAudiobookAnalytics } from '@/composables/useAudiobookAnalytics'
 import { createRequestCancellation, resolveApiUrl, type RequestCancellation } from '@/services/http'
 import { getChapterTts } from '@/services/tts'
@@ -28,6 +28,7 @@ function createAudiobookState() {
   const playing = ref(false)
   const loading = ref(false)
   const errorMessage = ref('')
+  const currentTimeMs = ref(0)
   const chapterTitle = ref('')
   const bookTitle = ref('')
   const chapterUrl = ref('')
@@ -35,6 +36,7 @@ function createAudiobookState() {
   const coverUrl = ref('')
   const playerPosition = ref<AudiobookPlayerPosition>()
   const analytics = useAudiobookAnalytics()
+  const timeline = shallowRef<TtsTimelineEntry[]>([])
 
   let currentPlan: TtsChapterAudio | undefined
   let lastStartOptions: AudiobookStartOptions | undefined
@@ -59,6 +61,26 @@ function createAudiobookState() {
     settled: () => void
   }> = []
   let activeAudioDownloads = 0
+
+  const activeTimeline = computed(() => {
+    const entries = timeline.value
+    if (!entries.length) {
+      return undefined
+    }
+    let low = 0
+    let high = entries.length - 1
+    let active: TtsTimelineEntry | undefined
+    while (low <= high) {
+      const middle = Math.floor((low + high) / 2)
+      if (entries[middle].startMs <= currentTimeMs.value) {
+        active = entries[middle]
+        low = middle + 1
+      } else {
+        high = middle - 1
+      }
+    }
+    return active && currentTimeMs.value < active.endMs ? active : undefined
+  })
 
   function audioKey(plan: TtsChapterAudio, segmentIndex: number) {
     return `${plan.startOffset}:${segmentIndex}`
@@ -117,6 +139,8 @@ function createAudiobookState() {
     destroyAudioContexts()
     removePrefetchedAudioFiles()
     currentPlan = undefined
+    timeline.value = []
+    currentTimeMs.value = 0
     playing.value = false
     loading.value = false
     errorMessage.value = ''
@@ -295,10 +319,18 @@ function createAudiobookState() {
         loading.value = false
       }
     })
+    context.onTimeUpdate(() => {
+      if (activeAudioContext !== context) {
+        return
+      }
+      currentTimeMs.value =
+        segment.startMs + Math.max(0, Number(context.currentTime) || 0) * 1000
+    })
     context.onEnded(() => {
       if (activeAudioContext !== context || activeAudioIndex !== segmentIndex) {
         return
       }
+      currentTimeMs.value = segment.startMs + segment.durationMs
       void advanceAudioPlayback()
     })
     context.onError(() => {
@@ -323,6 +355,7 @@ function createAudiobookState() {
     }
     destroyAudioContexts()
     activeAudioIndex = index
+    currentTimeMs.value = segment.startMs
     const context = createAudioContext(plan, index)
     activeAudioContext = context
     loading.value = true
@@ -334,6 +367,7 @@ function createAudiobookState() {
     destroyAudioContexts()
     currentPlan = plan
     lastStartOptions = options
+    timeline.value = plan.timeline
     playAudio(plan, 0)
   }
 
@@ -488,6 +522,8 @@ function createAudiobookState() {
     playing,
     loading,
     errorMessage,
+    currentTimeMs,
+    activeTimeline,
     chapterTitle,
     bookTitle,
     chapterUrl,

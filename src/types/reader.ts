@@ -31,3 +31,9 @@ export interface ReaderChapterBlock {
   pages: ReaderPageData[]
   key: string
 }
+
+export interface ReaderHighlightRange {
+  paragraphIndex: number
+  startOffset: number
+  endOffset: number
+}
