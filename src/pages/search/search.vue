@@ -7,7 +7,9 @@ import { searchBooks } from '@/services/novel'
 import { ApiRequestError } from '@/services/http'
 import { addSearchHistory } from '@/utils/storage'
 import { getAuthToken, openLoginPage, openProtectedPage } from '@/services/auth'
+import { usePageAnalytics } from '@/composables/usePageAnalytics'
 import { usePageTheme } from '@/composables/useTheme'
+import { trackAnalyticsEvent } from '@/services/analytics'
 import type { Book, SearchGroup } from '@/types/novel'
 
 const query = ref('')
@@ -16,6 +18,7 @@ const groups = ref<SearchGroup[]>([])
 const loading = ref(false)
 const errorMessage = ref('')
 const { themeClass } = usePageTheme()
+usePageAnalytics('search')
 const totalResults = computed(() =>
   groups.value.reduce((total, group) => total + group.items.length, 0)
 )
@@ -45,6 +48,14 @@ async function runSearch(value = query.value) {
 
   try {
     groups.value = await searchBooks(next)
+    trackAnalyticsEvent('search', {
+      page: 'search',
+      value: totalResults.value,
+      metadata: {
+        query: next,
+        resultCount: totalResults.value
+      }
+    })
   } catch (error) {
     if (error instanceof ApiRequestError && error.statusCode === 401) {
       groups.value = []
@@ -74,6 +85,11 @@ function promptSearchLogin(value: string) {
 }
 
 function openCatalog(book: Book) {
+  trackAnalyticsEvent('book_open', {
+    page: 'search',
+    bookTitle: book.title,
+    metadata: { source: book.source, action: 'catalog' }
+  })
   openProtectedPage(
     `/pages/catalog/catalog?url=${encodeURIComponent(book.catalogUrl)}&title=${encodeURIComponent(book.title)}&coverUrl=${encodeURIComponent(book.coverUrl)}`
   )
@@ -88,6 +104,12 @@ function openReader(book: Book) {
     return
   }
 
+  trackAnalyticsEvent('reader_open', {
+    page: 'search',
+    bookTitle: book.title,
+    chapterUrl: book.readUrl,
+    metadata: { source: book.source }
+  })
   openProtectedPage(
     `/pages/reader/reader?chapterUrl=${encodeURIComponent(book.readUrl)}&catalogUrl=${encodeURIComponent(book.catalogUrl)}&bookTitle=${encodeURIComponent(book.title)}&coverUrl=${encodeURIComponent(book.coverUrl)}`
   )

@@ -12,12 +12,15 @@ import {
 } from '@/utils/storage'
 import type { ReadingHistoryItem } from '@/types/novel'
 import { openProtectedPage } from '@/services/auth'
+import { trackAnalyticsEvent } from '@/services/analytics'
+import { usePageAnalytics } from '@/composables/usePageAnalytics'
 import { useTabBarTheme } from '@/composables/useTabBarTheme'
 
 const activeTab = ref<'reading' | 'search'>('reading')
 const readingHistory = ref<ReadingHistoryItem[]>([])
 const searchHistory = ref<string[]>([])
 const { themeClass } = useTabBarTheme(1)
+usePageAnalytics('history')
 
 onShow(() => {
   refresh()
@@ -29,6 +32,12 @@ function refresh() {
 }
 
 function openReading(item: ReadingHistoryItem) {
+  trackAnalyticsEvent('reader_open', {
+    page: 'history',
+    bookTitle: item.bookTitle,
+    chapterUrl: item.chapterUrl,
+    metadata: { entry: 'history' }
+  })
   openProtectedPage(
     `/pages/reader/reader?chapterUrl=${encodeURIComponent(item.chapterUrl)}&catalogUrl=${encodeURIComponent(item.catalogUrl)}&bookTitle=${encodeURIComponent(item.bookTitle)}&coverUrl=${encodeURIComponent(item.coverUrl || '')}`
   )

@@ -1,23 +1,49 @@
 <script setup lang="ts">
-import { ref } from 'vue'
+import { computed, ref } from 'vue'
 import { onShow } from '@dcloudio/uni-app'
 import GlobalAudiobookPlayer from '@/components/audiobook/GlobalAudiobookPlayer.vue'
 import { getReadingHistory, getSearchHistory, removeSearchHistory } from '@/utils/storage'
 import { getAuthToken, openLoginPage, openProtectedPage } from '@/services/auth'
+import {
+  getRecommendationCategories,
+  type RecommendationCategories
+} from '@/services/recommendations'
+import { trackAnalyticsEvent } from '@/services/analytics'
 import type { ReadingHistoryItem } from '@/types/novel'
+import { usePageAnalytics } from '@/composables/usePageAnalytics'
 import { useTabBarTheme } from '@/composables/useTabBarTheme'
 
 const query = ref('')
 const searchHistory = ref<string[]>([])
 const readingHistory = ref<ReadingHistoryItem[]>([])
+const recommendations = ref<RecommendationCategories>({ searches: [], books: [] })
 
-const suggestions = ['完美世界', '盘龙', '斗破苍穹', '遮天']
+const defaultSuggestions = ['完美世界', '盘龙', '斗破苍穹', '遮天']
+const suggestions = computed(() =>
+  [...recommendations.value.books, ...recommendations.value.searches, ...defaultSuggestions]
+    .filter((item, index, items) => item && items.indexOf(item) === index)
+    .slice(0, 8)
+)
 const { themeClass } = useTabBarTheme(0)
+usePageAnalytics('index')
 
 onShow(() => {
   searchHistory.value = getSearchHistory().slice(0, 6)
   readingHistory.value = getReadingHistory().slice(0, 1)
+  if (getAuthToken()) {
+    void loadRecommendations()
+  } else {
+    recommendations.value = { searches: [], books: [] }
+  }
 })
+
+async function loadRecommendations() {
+  try {
+    recommendations.value = await getRecommendationCategories()
+  } catch {
+    recommendations.value = { searches: [], books: [] }
+  }
+}
 
 function openSearch(value = query.value) {
   const next = value.trim()
@@ -46,6 +72,12 @@ function openSearch(value = query.value) {
 }
 
 function continueReading(item: ReadingHistoryItem) {
+  trackAnalyticsEvent('reader_open', {
+    page: 'index',
+    bookTitle: item.bookTitle,
+    chapterUrl: item.chapterUrl,
+    metadata: { entry: 'continue_reading' }
+  })
   openProtectedPage(
     `/pages/reader/reader?chapterUrl=${encodeURIComponent(item.chapterUrl)}&catalogUrl=${encodeURIComponent(item.catalogUrl)}&bookTitle=${encodeURIComponent(item.bookTitle)}&coverUrl=${encodeURIComponent(item.coverUrl || '')}`
   )
@@ -97,7 +129,7 @@ function deleteRecentSearch(query: string) {
     <view class="section">
       <view class="section-head">
         <text class="section-title">快速发现</text>
-        <text class="muted">试试这些</text>
+        <text class="muted">根据近期热度推荐</text>
       </view>
       <view class="chips">
         <button v-for="item in suggestions" :key="item" class="chip" @tap="openSearch(item)">

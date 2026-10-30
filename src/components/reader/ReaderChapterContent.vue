@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed } from 'vue'
-import type { ReaderHighlightRange, ReaderPageLine } from '@/types/reader'
+import type { ReaderPageLine } from '@/types/reader'
 
 const props = defineProps<{
   bookTitle: string
@@ -9,33 +9,14 @@ const props = defineProps<{
   showHeading: boolean
   fontSizePx: number
   flow: 'page' | 'scroll'
-  highlightRange?: ReaderHighlightRange
 }>()
 
 const renderedLines = computed(() =>
-  props.lines.map((line, lineIndex) => {
-    const range = props.highlightRange
-    const rangeStart = range
-      ? Math.max(range.startOffset, line.lineStartOffset)
-      : line.lineStartOffset
-    const rangeEnd = range ? Math.min(range.endOffset, line.lineEndOffset) : line.lineStartOffset
-    const highlighted =
-      Boolean(range) && range?.paragraphIndex === line.paragraphIndex && rangeStart < rangeEnd
-    const indentOffset = line.lineStartOffset === 0 ? 2 : 0
-    const highlightStart = rangeStart - line.lineStartOffset + indentOffset
-    const highlightEnd = rangeEnd - line.lineStartOffset + indentOffset
-    return {
-      key: `${props.flow}-${lineIndex}`,
-      paragraphEnd: line.paragraphEnd,
-      segments: highlighted
-        ? [
-            { text: line.text.slice(0, highlightStart), highlighted: false },
-            { text: line.text.slice(highlightStart, highlightEnd), highlighted: true },
-            { text: line.text.slice(highlightEnd), highlighted: false }
-          ].filter((segment) => segment.text)
-        : [{ text: line.text, highlighted: false }]
-    }
-  })
+  props.lines.map((line, lineIndex) => ({
+    key: `${props.flow}-${lineIndex}`,
+    text: line.text,
+    paragraphEnd: line.paragraphEnd
+  }))
 )
 </script>
 
@@ -56,14 +37,7 @@ const renderedLines = computed(() =>
       class="reader-line"
       :class="{ 'paragraph-end': line.paragraphEnd }"
     >
-      <text class="reader-line-text">
-        <text
-          v-for="(segment, segmentIndex) in line.segments"
-          :key="`${line.key}-${segmentIndex}`"
-          :class="{ 'reader-highlight': segment.highlighted }"
-          >{{ segment.text }}</text
-        >
-      </text>
+      <text class="reader-line-text">{{ line.text }}</text>
     </view>
   </view>
 </template>
@@ -121,7 +95,10 @@ const renderedLines = computed(() =>
   margin-bottom: 30rpx;
 }
 
+/*
+ * 听书正文高亮样式暂时停用。
 .reader-highlight {
   color: var(--accent);
 }
+ */
 </style>

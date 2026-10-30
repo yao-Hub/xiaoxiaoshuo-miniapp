@@ -9,8 +9,9 @@ import type { TtsChapterAudio } from '@/types/tts'
 
 export async function getChapterTts(
   chapterUrl: string,
-  paragraphIndex: number,
-  offsetInParagraph: number,
+  absoluteOffset: number,
+  bookTitle: string,
+  maxCharacters: number,
   cancellation?: RequestCancellation
 ) {
   if (!hasConfiguredApi()) {
@@ -20,8 +21,9 @@ export async function getChapterTts(
     method: 'POST',
     data: {
       chapterUrl,
-      paragraphIndex,
-      offsetInParagraph
+      absoluteOffset,
+      maxCharacters,
+      bookTitle
     },
     token: getAuthToken(),
     timeout: 310000,

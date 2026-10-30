@@ -12,9 +12,11 @@ const TAP_SUPPRESSION_MS = 180
 const props = withDefaults(
   defineProps<{
     placement?: 'default' | 'above-tab' | 'above-toolbar'
+    hidden?: boolean
   }>(),
   {
-    placement: 'default'
+    placement: 'default',
+    hidden: false
   }
 )
 
@@ -38,10 +40,6 @@ let dragOriginBottom = 0
 let suppressTapUntil = 0
 
 const coverLetter = computed(() => audiobook.chapterTitle.value.trim().slice(0, 1) || '书')
-const progressBackground = computed(() => {
-  const progressDegrees = Math.max(0, Math.min(100, audiobook.progress.value)) * 3.6
-  return `conic-gradient(var(--accent) ${progressDegrees}deg, var(--line) ${progressDegrees}deg)`
-})
 const playerStyle = computed(() => {
   const position = audiobook.playerPosition.value
   if (!position) {
@@ -176,7 +174,7 @@ function handleCoverError() {
 
 <template>
   <view
-    v-if="audiobook.visible.value"
+    v-if="audiobook.visible.value && !props.hidden"
     class="audio-player"
     :class="{
       'above-tab': props.placement === 'above-tab' && !audiobook.playerPosition.value,
@@ -206,10 +204,10 @@ function handleCoverError() {
 
     <button
       class="play-control"
+      :disabled="audiobook.loading.value"
       :aria-label="audiobook.playing.value ? '暂停听书' : '继续听书'"
       @tap="runPlayerAction(audiobook.togglePlay)"
     >
-      <view class="progress-ring" :style="{ background: progressBackground }" />
       <view class="play-control-inner">
         <text v-if="audiobook.errorMessage.value" class="play-symbol error-symbol">!</text>
         <text v-else-if="audiobook.loading.value" class="play-symbol">•••</text>
@@ -310,12 +308,11 @@ function handleCoverError() {
 }
 
 .play-control {
-  position: relative;
   display: grid;
   width: 72rpx;
   height: 72rpx;
   margin: 0;
-  padding: 0;
+  padding: 5rpx;
   flex: 0 0 72rpx;
   background: transparent;
   border: 0;
@@ -323,17 +320,10 @@ function handleCoverError() {
   place-items: center;
 }
 
-.progress-ring {
-  position: absolute;
-  inset: 0;
-  background: var(--line);
-  border-radius: 50%;
-}
-
 .play-control-inner {
-  position: absolute;
-  inset: 5rpx;
   display: grid;
+  width: 100%;
+  height: 100%;
   color: var(--reader-ink);
   background: var(--toolbar-bg);
   border-radius: 50%;

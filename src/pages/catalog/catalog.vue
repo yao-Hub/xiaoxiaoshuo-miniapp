@@ -3,7 +3,9 @@ import { computed, ref } from 'vue'
 import { onLoad } from '@dcloudio/uni-app'
 import GlobalAudiobookPlayer from '@/components/audiobook/GlobalAudiobookPlayer.vue'
 import { getCatalog } from '@/services/novel'
+import { usePageAnalytics } from '@/composables/usePageAnalytics'
 import { usePageTheme } from '@/composables/useTheme'
+import { trackAnalyticsEvent } from '@/services/analytics'
 import type { Book, Chapter } from '@/types/novel'
 
 const catalogUrl = ref('')
@@ -16,6 +18,7 @@ const errorMessage = ref('')
 const ascending = ref(true)
 const coverFailed = ref(false)
 const { themeClass } = usePageTheme()
+usePageAnalytics('catalog')
 
 const visibleChapters = computed(() =>
   ascending.value ? chapters.value : [...chapters.value].reverse()
@@ -41,6 +44,12 @@ onLoad(async (options) => {
 })
 
 function openChapter(chapter: Chapter) {
+  trackAnalyticsEvent('reader_open', {
+    page: 'catalog',
+    bookTitle: book.value?.title || initialTitle.value,
+    chapterUrl: chapter.url,
+    metadata: { chapterTitle: chapter.title }
+  })
   uni.navigateTo({
     url: `/pages/reader/reader?chapterUrl=${encodeURIComponent(chapter.url)}&catalogUrl=${encodeURIComponent(book.value?.catalogUrl || catalogUrl.value)}&bookTitle=${encodeURIComponent(book.value?.title || initialTitle.value)}&coverUrl=${encodeURIComponent(book.value?.coverUrl || initialCoverUrl.value)}`
   })

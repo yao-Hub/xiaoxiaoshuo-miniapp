@@ -10,12 +10,14 @@ import {
   openLoginPage,
   type SessionUser
 } from '@/services/auth'
+import { usePageAnalytics } from '@/composables/usePageAnalytics'
 import { useTabBarTheme } from '@/composables/useTabBarTheme'
 
 const user = ref<SessionUser | undefined>(getCachedUser())
 const loggedIn = ref(Boolean(getAuthToken()))
 const errorMessage = ref('')
 const { themeClass, resolvedTheme, toggleResolvedTheme } = useTabBarTheme(2)
+usePageAnalytics('profile')
 const themeIconPath = computed(() =>
   resolvedTheme.value === 'dark'
     ? '/static/icons/theme-sun-light.svg'

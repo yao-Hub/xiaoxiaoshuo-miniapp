@@ -3,6 +3,7 @@ import { reactive, ref } from 'vue'
 import { onLoad } from '@dcloudio/uni-app'
 import GlobalAudiobookPlayer from '@/components/audiobook/GlobalAudiobookPlayer.vue'
 import { login, register } from '@/services/auth'
+import { usePageAnalytics } from '@/composables/usePageAnalytics'
 import { usePageTheme } from '@/composables/useTheme'
 
 const mode = ref<'login' | 'register'>('login')
@@ -17,6 +18,7 @@ const form = reactive({
   confirmPassword: ''
 })
 const { themeClass } = usePageTheme()
+usePageAnalytics('login')
 
 onLoad((options) => {
   redirectUrl.value = decodeURIComponent(String(options?.redirect || ''))

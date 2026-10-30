@@ -449,6 +449,32 @@ export function useReaderEngine(options: ReaderEngineOptions) {
     )
   }
 
+  function estimateScrollTopForReaderPosition(paragraphIndex: number, startOffset: number) {
+    const lines = scrollLines.value
+    const lineIndex = lines.findIndex(
+      (line) =>
+        line.paragraphIndex === paragraphIndex &&
+        startOffset >= line.lineStartOffset &&
+        startOffset < line.lineEndOffset
+    )
+    if (lineIndex < 0) {
+      return undefined
+    }
+
+    let lineTop = scrollShowHeading.value ? headingHeightPx.value : 0
+    for (let index = 0; index < lineIndex; index += 1) {
+      const line = lines[index]
+      lineTop += lineHeightPx.value + (line.paragraphEnd ? paragraphGapPx.value : 0)
+    }
+
+    const lineCenter = lineTop + lineHeightPx.value / 2
+    const target = lineCenter - toValue(options.pageViewportHeight) / 2
+    return Math.min(
+      Math.max(0, target),
+      Math.max(0, estimatedScrollHeight.value - toValue(options.pageViewportHeight))
+    )
+  }
+
   function syncPageIndexFromScroll() {
     const maximum = Math.max(0, estimatedScrollHeight.value - toValue(options.pageViewportHeight))
     if (maximum === 0) {
@@ -520,6 +546,7 @@ export function useReaderEngine(options: ReaderEngineOptions) {
     rebuildPages,
     setScrollPosition,
     estimatePageScrollTop,
+    estimateScrollTopForReaderPosition,
     syncPageIndexFromScroll,
     getReadingProgress,
     cancelPendingLoad

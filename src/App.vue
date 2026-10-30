@@ -1,9 +1,27 @@
 <script lang="ts">
 import { initializeTheme } from '@/composables/useTheme'
+import { getAnalyticsSessionId, trackAnalyticsDuration } from '@/services/analytics'
+
+let appSessionStartedAt = 0
 
 export default {
   onLaunch() {
     initializeTheme()
+    getAnalyticsSessionId()
+    appSessionStartedAt = Date.now()
+  },
+  onShow() {
+    if (!appSessionStartedAt) {
+      appSessionStartedAt = Date.now()
+    }
+  },
+  onHide() {
+    if (appSessionStartedAt) {
+      trackAnalyticsDuration('app_session', appSessionStartedAt, {
+        page: 'app'
+      })
+      appSessionStartedAt = 0
+    }
   }
 }
 </script>

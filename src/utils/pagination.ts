@@ -10,6 +10,11 @@ export interface ReaderPaginationLayout {
   headingHeightPx: number
 }
 
+export interface ReaderParagraphOffset {
+  paragraphIndex: number
+  startOffset: number
+}
+
 function characterUnits(character: string) {
   if (/\s/.test(character)) {
     return 0.34
@@ -95,9 +100,47 @@ function wrapParagraph(paragraph: string, capacity: number): WrappedLine[] {
 
 export function splitChapterParagraphs(content: string) {
   return String(content || '')
+    .replace(/\r/g, '')
     .split(/\n{2,}/)
     .map((paragraph) => paragraph.trim())
     .filter(Boolean)
+}
+
+export function getReaderLineAbsoluteOffset(
+  paragraphs: string[],
+  line: Pick<ReaderPageLine, 'paragraphIndex' | 'lineStartOffset'>
+) {
+  let offset = line.lineStartOffset
+  for (let index = 0; index < line.paragraphIndex; index += 1) {
+    offset += (paragraphs[index]?.length || 0) + 2
+  }
+  return offset
+}
+
+export function resolveReaderParagraphOffset(
+  paragraphs: string[],
+  absoluteOffset: number
+): ReaderParagraphOffset | undefined {
+  let paragraphStart = 0
+  for (let index = 0; index < paragraphs.length; index += 1) {
+    const paragraph = paragraphs[index]
+    const paragraphEnd = paragraphStart + paragraph.length
+    if (absoluteOffset <= paragraphEnd || index === paragraphs.length - 1) {
+      return {
+        paragraphIndex: index,
+        startOffset: Math.min(paragraph.length, Math.max(0, absoluteOffset - paragraphStart))
+      }
+    }
+    const nextParagraphStart = paragraphEnd + 2
+    if (absoluteOffset < nextParagraphStart) {
+      return {
+        paragraphIndex: index + 1,
+        startOffset: 0
+      }
+    }
+    paragraphStart = nextParagraphStart
+  }
+  return undefined
 }
 
 export function buildReaderPages(

@@ -9,6 +9,7 @@ import ReaderListenButton from '@/components/reader/ReaderListenButton.vue'
 import ReaderSettingsSheet from '@/components/reader/ReaderSettingsSheet.vue'
 import ReaderTopBar from '@/components/reader/ReaderTopBar.vue'
 import { useAudiobook } from '@/composables/useAudiobook'
+import { usePageAnalytics } from '@/composables/usePageAnalytics'
 import { useReaderCatalog } from '@/composables/useReaderCatalog'
 import { useReaderEngine } from '@/composables/useReaderEngine'
 import { useReaderViewport } from '@/composables/useReaderViewport'
@@ -20,9 +21,10 @@ import {
   READER_FONT_SIZE_MIN
 } from '@/constants/reader'
 import { getAuthToken, openLoginPage } from '@/services/auth'
+import { trackAnalyticsEvent } from '@/services/analytics'
 import type { Chapter, ChapterContent } from '@/types/novel'
-import type { ReaderHighlightRange, ReaderPageMode, ReaderSettings } from '@/types/reader'
-import { splitChapterParagraphs } from '@/utils/pagination'
+import type { ReaderPageMode, ReaderSettings } from '@/types/reader'
+import { getReaderLineAbsoluteOffset, splitChapterParagraphs } from '@/utils/pagination'
 import { resolveHorizontalReaderTapZone, resolveReaderTapZone } from '@/utils/reader-interaction'
 import {
   getReaderSettings,
@@ -92,6 +94,13 @@ const {
 const bookTitle = ref('')
 const routeCoverUrl = ref('')
 const fallbackCatalogUrl = ref('')
+usePageAnalytics('reader', {
+  sessionEventType: 'reader_session',
+  getContext: () => ({
+    bookTitle: bookTitle.value,
+    chapterUrl: chapterUrl.value
+  })
+})
 const effectiveCatalogUrl = computed(() => catalogUrl.value || fallbackCatalogUrl.value)
 const readerCatalog = useReaderCatalog({
   catalogUrl: effectiveCatalogUrl,
@@ -151,68 +160,6 @@ const showReaderControls = computed(
 const chapterParagraphs = computed(() =>
   chapter.value ? splitChapterParagraphs(chapter.value.content) : []
 )
-const audiobookParagraphLocation = computed(() => {
-  const timing = audiobook.activeTiming.value
-  if (
-    !audiobook.visible.value ||
-    !timing ||
-    !chapter.value ||
-    audiobook.chapterUrl.value !== chapter.value.chapterUrl
-  ) {
-    return undefined
-  }
-  const paragraphs = chapterParagraphs.value
-  let paragraphStart = 0
-  for (let index = 0; index < paragraphs.length; index += 1) {
-    const paragraph = paragraphs[index]
-    const paragraphEnd = paragraphStart + paragraph.length
-    const nextParagraphStart = paragraphEnd + 2
-    if (timing.startOffset < paragraphStart || timing.startOffset >= nextParagraphStart) {
-      paragraphStart = nextParagraphStart
-      continue
-    }
-    const paragraphIndex =
-      timing.startOffset > paragraphEnd && index + 1 < paragraphs.length ? index + 1 : index
-    const selectedParagraph = paragraphs[paragraphIndex]
-    const selectedStart = paragraphIndex === index ? paragraphStart : nextParagraphStart
-    const selectedEnd = selectedStart + selectedParagraph.length
-    const startOffset =
-      paragraphIndex === index ? Math.min(timing.startOffset, paragraphEnd) - paragraphStart : 0
-    const endOffset = Math.max(startOffset, Math.min(timing.endOffset, selectedEnd) - selectedStart)
-    return {
-      paragraphIndex,
-      startOffset,
-      endOffset,
-      paragraphEnd: selectedEnd
-    }
-  }
-  return undefined
-})
-const audiobookHighlightRange = computed<ReaderHighlightRange | undefined>(() => {
-  const location = audiobookParagraphLocation.value
-  if (!location) {
-    return undefined
-  }
-  return {
-    paragraphIndex: location.paragraphIndex,
-    startOffset: location.startOffset,
-    endOffset: location.endOffset
-  }
-})
-const audiobookPageIndex = computed(() => {
-  const location = audiobookParagraphLocation.value
-  if (!location) {
-    return undefined
-  }
-  return readerPages.value.findIndex((page) =>
-    page.lines.some(
-      (line) =>
-        line.paragraphIndex === location.paragraphIndex &&
-        location.startOffset >= line.lineStartOffset &&
-        location.startOffset <= line.lineEndOffset
-    )
-  )
-})
 const brightnessOverlayStyle = computed(() => ({
   opacity: String((100 - readerSettings.brightness) / 100)
 }))
@@ -222,18 +169,6 @@ watch(
   (chapterCount) => {
     if (chapterCount && chapter.value) {
       void refreshWindow()
-    }
-  }
-)
-
-watch(
-  () => [audiobook.playing.value, audiobookPageIndex.value] as const,
-  ([playing, pageIndex]) => {
-    if (!playing || pageIndex === undefined || pageIndex < 0) {
-      return
-    }
-    if (pageIndex !== currentPageIndex.value) {
-      setPageIndex(pageIndex)
     }
   }
 )
@@ -289,6 +224,12 @@ function handleChapterCommitted(targetChapter: ChapterContent, pageIndex: number
   clearChapterPreview()
   if (lastCommittedChapterUrl !== targetChapter.chapterUrl) {
     lastCommittedChapterUrl = targetChapter.chapterUrl
+    trackAnalyticsEvent('chapter_change', {
+      page: 'reader',
+      bookTitle: bookTitle.value,
+      chapterUrl: targetChapter.chapterUrl,
+      metadata: { chapterTitle: targetChapter.title }
+    })
     rememberReading({
       key: targetChapter.catalogUrl || targetChapter.chapterUrl,
       bookTitle: bookTitle.value || '未命名作品',
@@ -506,25 +447,31 @@ function openSettings() {
   settingsVisible.value = true
 }
 
-function startAudiobook() {
-  if (!chapter.value) {
-    return
-  }
+function getCurrentPageStartOffset() {
   const currentPage = readerPages.value[currentPageIndex.value]
   const firstLine = currentPage?.lines[0]
   if (!firstLine) {
-    uni.showToast({ title: '无法定位当前页的朗读位置', icon: 'none' })
-    return
+    return undefined
   }
-  void audiobook.start({
+  return getReaderLineAbsoluteOffset(chapterParagraphs.value, firstLine)
+}
+
+function startAudiobook() {
+  const startOffset = getCurrentPageStartOffset()
+  if (!chapter.value || startOffset === undefined) {
+    uni.showToast({ title: '无法定位当前页的朗读位置', icon: 'none' })
+    return false
+  }
+  const startOptions = {
     chapterUrl: chapter.value.chapterUrl,
     catalogUrl: effectiveCatalogUrl.value,
     bookTitle: bookTitle.value,
     title: chapter.value.title,
     coverUrl: bookCoverUrl.value,
-    paragraphIndex: firstLine.paragraphIndex,
-    offsetInParagraph: firstLine.lineStartOffset
-  })
+    absoluteStartOffset: startOffset
+  }
+  void audiobook.start(startOptions)
+  return true
 }
 
 function openCatalog() {
@@ -694,7 +641,6 @@ async function retryLoad() {
           :lines="scrollLines"
           :show-heading="scrollShowHeading"
           :font-size-px="fontSizePx"
-          :highlight-range="audiobookHighlightRange"
         />
       </scroll-view>
     </view>
@@ -727,7 +673,6 @@ async function retryLoad() {
             :lines="item.page.lines"
             :show-heading="item.page.showHeading"
             :font-size-px="fontSizePx"
-            :highlight-range="audiobookHighlightRange"
           />
         </swiper-item>
       </swiper>
@@ -760,7 +705,24 @@ async function retryLoad() {
       @start="startAudiobook"
     />
 
-    <GlobalAudiobookPlayer :placement="toolbarVisible ? 'above-toolbar' : 'default'" />
+    <GlobalAudiobookPlayer
+      :placement="toolbarVisible ? 'above-toolbar' : 'default'"
+      :hidden="!toolbarVisible"
+    />
+
+    <!--
+      <ReaderImmersiveListenBar
+        v-if="showReaderControls && !toolbarVisible && audiobook.visible.value"
+        :show-original-progress="showAudiobookOriginalProgress"
+        :is-on-playback-page="isAudiobookOnCurrentPage"
+        :playing="audiobook.playing.value"
+        :loading="audiobook.loading.value"
+        :error="Boolean(audiobook.errorMessage.value)"
+        @locate-original="locateAudiobookProgress"
+        @from-current="listenFromCurrentPage"
+        @toggle-play="audiobook.togglePlay"
+      />
+    -->
 
     <ReaderCatalogSheet
       v-if="catalogVisible"
