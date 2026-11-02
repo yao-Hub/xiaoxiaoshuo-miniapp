@@ -15,10 +15,26 @@ export interface TtsTimelineEntry {
 }
 
 export interface TtsChapterAudio {
+  audioId: string
   chapterTitle: string
   startOffset: number
   endOffset: number
   hasMore: boolean
+  rate: number
+  voice: string
   segments: TtsAudioSegment[]
   timeline: TtsTimelineEntry[]
+}
+
+export interface TtsVoiceOption {
+  id: string
+  label: string
+  description: string
+  gender: 'female' | 'male'
+  favorite: boolean
+}
+
+export interface TtsVoiceCatalog {
+  defaultVoiceId: string
+  voices: TtsVoiceOption[]
 }

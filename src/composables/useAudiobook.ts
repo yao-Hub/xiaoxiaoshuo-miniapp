@@ -3,6 +3,7 @@ import type { TtsChapterAudio, TtsTimelineEntry } from '@/types/tts'
 import { useAudiobookAnalytics } from '@/composables/useAudiobookAnalytics'
 import { useAudiobookPlaybackRate } from '@/composables/useAudiobookPlaybackRate'
 import { useAudiobookSleepTimer } from '@/composables/useAudiobookSleepTimer'
+import { useAudiobookVoice } from '@/composables/useAudiobookVoice'
 import { createRequestCancellation, resolveApiUrl, type RequestCancellation } from '@/services/http'
 import { getChapterTts } from '@/services/tts'
 
@@ -29,9 +30,12 @@ export interface AudiobookPlayerPosition {
 type AudioContext = ReturnType<typeof uni.createInnerAudioContext>
 
 const SEGMENT_CHARACTERS = 800
+const PLAYBACK_RATE_RESTART_DELAY_MS = 500
+const VOICE_RESTART_DELAY_MS = 200
 
 function createAudiobookState() {
   const visible = ref(false)
+  const settingsVisible = ref(false)
   const playing = ref(false)
   const loading = ref(false)
   const errorMessage = ref('')
@@ -53,15 +57,20 @@ function createAudiobookState() {
   let queueGeneration = 0
   let activeAudioIndex = 0
   let activeAudioContext: AudioContext | undefined
+  let playbackGeneration = 0
   let advancingPlan = false
   let nextPlanPromise: Promise<TtsChapterAudio | undefined> | undefined
   let resumeChapterAfterTimer: AudiobookStartOptions | undefined
+  let audioPreferenceRestartTimer: ReturnType<typeof setTimeout> | undefined
+  let preferredRestartOffset: number | undefined
   const prefetchedAudioFiles = new Map<string, string>()
   const audioDownloadTasks = new Map<string, Promise<string | undefined>>()
+  const audioContexts = new Set<AudioContext>()
   const sleepTimer = useAudiobookSleepTimer(handleSleepTimerExpired)
   const playbackRateSettings = useAudiobookPlaybackRate()
+  const voiceSettings = useAudiobookVoice()
 
-  const activeTimeline = computed(() => {
+  function findTimelineAtOrBefore() {
     const entries = timeline.value
     if (!entries.length) {
       return undefined
@@ -78,31 +87,20 @@ function createAudiobookState() {
         high = middle - 1
       }
     }
+    return active
+  }
+
+  const activeTimeline = computed(() => {
+    const active = findTimelineAtOrBefore()
     return active && currentTimeMs.value < active.endMs ? active : undefined
   })
 
   function getCurrentTimelineOffset() {
-    const entries = timeline.value
-    if (!entries.length) {
-      return currentPlan?.startOffset
-    }
-    let low = 0
-    let high = entries.length - 1
-    let active: TtsTimelineEntry | undefined
-    while (low <= high) {
-      const middle = Math.floor((low + high) / 2)
-      if (entries[middle].startMs <= currentTimeMs.value) {
-        active = entries[middle]
-        low = middle + 1
-      } else {
-        high = middle - 1
-      }
-    }
-    return active?.startOffset ?? currentPlan?.startOffset
+    return findTimelineAtOrBefore()?.startOffset ?? currentPlan?.startOffset
   }
 
   function audioKey(plan: TtsChapterAudio, segmentIndex: number) {
-    return `${plan.startOffset}:${segmentIndex}`
+    return `${plan.audioId}:${segmentIndex}`
   }
 
   function removePrefetchedAudioFiles() {
@@ -114,10 +112,36 @@ function createAudiobookState() {
     audioDownloadTasks.clear()
   }
 
+  function clearAudioPreferenceRestartTimer() {
+    if (audioPreferenceRestartTimer) {
+      clearTimeout(audioPreferenceRestartTimer)
+      audioPreferenceRestartTimer = undefined
+    }
+  }
+
+  function scheduleAudioPreferenceRestart(delayMs: number) {
+    const currentOffset = getCurrentTimelineOffset()
+    if (currentOffset !== undefined) {
+      preferredRestartOffset = currentOffset
+    }
+    clearAudioPreferenceRestartTimer()
+    if (!visible.value || !lastStartOptions || (!activeAudioContext && !loading.value)) {
+      return
+    }
+    audioPreferenceRestartTimer = setTimeout(() => {
+      audioPreferenceRestartTimer = undefined
+      void restartPlaybackForSettings()
+    }, delayMs)
+  }
+
   function destroyAudioContexts() {
-    const context = activeAudioContext
+    playbackGeneration += 1
     activeAudioContext = undefined
-    context?.destroy()
+    audioContexts.forEach((context) => {
+      context.stop()
+      context.destroy()
+    })
+    audioContexts.clear()
   }
 
   function abortQueuedWork() {
@@ -161,25 +185,28 @@ function createAudiobookState() {
   }
 
   async function fetchPlan(options: AudiobookStartOptions) {
+    const requestedRate = playbackRateSettings.playbackRate.value
+    const requestedVoice = voiceSettings.voiceId.value
     const result = await getChapterTts(
       options.chapterUrl,
       options.absoluteStartOffset,
       options.bookTitle,
       SEGMENT_CHARACTERS,
-      playbackRateSettings.playbackRate.value,
+      requestedRate,
+      requestedVoice,
       requestController
     )
-    if (!result.segments.length) {
+    if (!result.audioId || !result.segments.length) {
       throw new Error('听书音频分段缺失，请重新加载。')
+    }
+    if (result.rate !== requestedRate || result.voice !== requestedVoice) {
+      throw new Error('听书音频配置与当前设置不一致，请重试。')
     }
     return result
   }
 
   function prefetchAudioSegment(plan: TtsChapterAudio, segmentIndex: number, generation: number) {
     const segment = plan.segments[segmentIndex]
-    if (!segment) {
-      return Promise.resolve<string | undefined>(undefined)
-    }
     const key = audioKey(plan, segmentIndex)
     const cached = prefetchedAudioFiles.get(key)
     if (cached) {
@@ -230,16 +257,25 @@ function createAudiobookState() {
     const generation = queueGeneration
     const controller = createRequestCancellation()
     queueController = controller
+    const requestedRate = playbackRateSettings.playbackRate.value
+    const requestedVoice = voiceSettings.voiceId.value
     nextPlanPromise = getChapterTts(
       lastStartOptions.chapterUrl,
       currentPlan.endOffset,
       lastStartOptions.bookTitle,
       SEGMENT_CHARACTERS,
-      playbackRateSettings.playbackRate.value,
+      requestedRate,
+      requestedVoice,
       controller
     )
       .then((result) => {
-        if (generation !== queueGeneration || !result.segments.length) {
+        if (
+          generation !== queueGeneration ||
+          !result.audioId ||
+          !result.segments.length ||
+          result.rate !== requestedRate ||
+          result.voice !== requestedVoice
+        ) {
           return undefined
         }
         return result
@@ -256,6 +292,7 @@ function createAudiobookState() {
   function createAudioContext(plan: TtsChapterAudio, segmentIndex: number, offsetMs = 0) {
     const segment = plan.segments[segmentIndex]
     const context = uni.createInnerAudioContext()
+    audioContexts.add(context)
     context.obeyMuteSwitch = false
     context.src =
       prefetchedAudioFiles.get(audioKey(plan, segmentIndex)) || resolveApiUrl(segment.url)
@@ -346,16 +383,18 @@ function createAudiobookState() {
 
   async function playAudio(plan: TtsChapterAudio, index: number, offsetMs = 0) {
     const segment = plan.segments[index]
-    if (!segment) {
-      return false
-    }
     const generation = queueGeneration
     destroyAudioContexts()
+    const currentPlaybackGeneration = playbackGeneration
     activeAudioIndex = index
     currentTimeMs.value = segment.startMs + Math.max(0, Math.min(segment.durationMs, offsetMs))
     loading.value = true
     await prefetchAudioSegment(plan, index, generation)
-    if (currentPlan !== plan || generation !== queueGeneration) {
+    if (
+      currentPlan !== plan ||
+      generation !== queueGeneration ||
+      currentPlaybackGeneration !== playbackGeneration
+    ) {
       return false
     }
     const context = createAudioContext(plan, index, offsetMs)
@@ -476,6 +515,7 @@ function createAudiobookState() {
   }
 
   async function start(options: AudiobookStartOptions, preserveSleepTimer = false) {
+    clearAudioPreferenceRestartTimer()
     if (!preserveSleepTimer) {
       sleepTimer.cancel()
     }
@@ -524,13 +564,22 @@ function createAudiobookState() {
     }
   }
 
-  async function setPlaybackRate(rate: number) {
-    const wasPlaying = playing.value
-    const currentOffset = getCurrentTimelineOffset()
+  function setPlaybackRate(rate: number) {
     playbackRateSettings.setRate(rate)
+    scheduleAudioPreferenceRestart(PLAYBACK_RATE_RESTART_DELAY_MS)
+  }
+
+  function setPlaybackVoice(voiceId: string) {
+    voiceSettings.setVoice(voiceId)
+    scheduleAudioPreferenceRestart(VOICE_RESTART_DELAY_MS)
+  }
+
+  async function restartPlaybackForSettings() {
+    const currentOffset = preferredRestartOffset ?? getCurrentTimelineOffset()
     if (!visible.value || !lastStartOptions || currentOffset === undefined) {
       return
     }
+    const wasPlaying = playing.value
     await start(
       {
         ...lastStartOptions,
@@ -538,13 +587,16 @@ function createAudiobookState() {
       },
       true
     )
+    if (!errorMessage.value && preferredRestartOffset === currentOffset) {
+      preferredRestartOffset = undefined
+    }
     if (!wasPlaying && activeAudioContext) {
       activeAudioContext.pause()
     }
   }
 
-  async function resetPlaybackRate() {
-    await setPlaybackRate(1)
+  function resetPlaybackRate() {
+    setPlaybackRate(1)
   }
 
   function togglePlay() {
@@ -572,10 +624,21 @@ function createAudiobookState() {
     }
   }
 
+  function openSettings() {
+    settingsVisible.value = true
+  }
+
+  function closeSettings() {
+    settingsVisible.value = false
+  }
+
   function close() {
+    clearAudioPreferenceRestartTimer()
+    preferredRestartOffset = undefined
     resumeChapterAfterTimer = undefined
     sleepTimer.cancel()
     resetPlaybackState()
+    settingsVisible.value = false
     visible.value = false
     chapterTitle.value = ''
     bookTitle.value = ''
@@ -593,12 +656,17 @@ function createAudiobookState() {
     coverUrl.value = url
   }
 
+  function reloadUserSettings() {
+    playbackRateSettings.reload()
+    voiceSettings.reloadVoice()
+  }
+
   return {
     visible,
+    settingsVisible,
     playing,
     loading,
     errorMessage,
-    currentTimeMs,
     activeTimeline,
     chapterTitle,
     bookTitle,
@@ -617,10 +685,21 @@ function createAudiobookState() {
     setPlaybackRate,
     setRateOnlyForBook: playbackRateSettings.setOnlyForBook,
     resetPlaybackRate,
+    voiceId: voiceSettings.voiceId,
+    voiceOptions: voiceSettings.voices,
+    voiceLoading: voiceSettings.loading,
+    voiceError: voiceSettings.errorMessage,
+    currentVoice: voiceSettings.currentVoice,
+    loadVoices: voiceSettings.loadVoices,
+    setPlaybackVoice,
+    setVoiceFavorite: voiceSettings.setVoiceFavorite,
+    openSettings,
+    closeSettings,
     togglePlay,
     close,
     setPlayerPosition,
-    setCoverUrl
+    setCoverUrl,
+    reloadUserSettings
   }
 }
 

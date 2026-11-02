@@ -48,18 +48,13 @@ function handleFontInput(event: Event) {
 }
 
 function commitFontSize() {
-  const value = Number(fontSizeInput.value)
-  applyFontSize(Number.isFinite(value) ? value : props.fontSize)
+  applyFontSize(Number(fontSizeInput.value) || props.fontSize)
 }
 
 function applyFontSize(value: number) {
   const next = Math.min(READER_FONT_SIZE_MAX, Math.max(READER_FONT_SIZE_MIN, value))
   fontSizeInput.value = String(next)
   emit('fontSizeChange', next)
-}
-
-function changeBrightness(event: { detail: { value: number } }) {
-  emit('brightnessChange', event.detail.value)
 }
 </script>
 
@@ -80,8 +75,8 @@ function changeBrightness(event: { detail: { value: number } }) {
         :background-color="trackColor"
         :block-color="activeColor"
         :block-size="22"
-        @changing="changeBrightness"
-        @change="changeBrightness"
+        @changing="emit('brightnessChange', $event.detail.value)"
+        @change="emit('brightnessChange', $event.detail.value)"
       />
     </view>
 

@@ -2,6 +2,7 @@
 import { computed, ref, watch } from 'vue'
 import AudiobookSettingsSheet from '@/components/audiobook/AudiobookSettingsSheet.vue'
 import { useAudiobook } from '@/composables/useAudiobook'
+import { setTabBarHidden } from '@/utils/tabbar'
 
 const PLAYER_LEFT_RPX = 24
 const PLAYER_WIDTH_RPX = 400
@@ -24,7 +25,6 @@ const props = withDefaults(
 const audiobook = useAudiobook()
 const coverFailed = ref(false)
 const dragging = ref(false)
-const settingsVisible = ref(false)
 const systemInfo = uni.getSystemInfoSync()
 const windowWidth = systemInfo.windowWidth || 375
 const windowHeight = systemInfo.windowHeight || systemInfo.screenHeight || 667
@@ -58,20 +58,20 @@ watch(audiobook.coverUrl, () => {
   coverFailed.value = false
 })
 
-watch(audiobook.visible, (visible) => {
-  if (!visible) {
-    settingsVisible.value = false
-  }
-})
+watch(audiobook.settingsVisible, setTabBarHidden, { immediate: true })
 
-function getMinimumBottom() {
+function getPlacementBottom(edge: number) {
   if (props.placement === 'above-toolbar') {
     return uni.upx2px(216) + safeAreaBottom
   }
   if (props.placement === 'above-tab') {
     return uni.upx2px(128) + safeAreaBottom
   }
-  return PLAYER_EDGE_PX + safeAreaBottom
+  return edge + safeAreaBottom
+}
+
+function getMinimumBottom() {
+  return getPlacementBottom(PLAYER_EDGE_PX)
 }
 
 function clampPosition(position: { left: number; bottom: number }) {
@@ -86,28 +86,19 @@ function clampPosition(position: { left: number; bottom: number }) {
 }
 
 function getDefaultPosition() {
-  let bottom = uni.upx2px(28) + safeAreaBottom
-  if (props.placement === 'above-toolbar') {
-    bottom = uni.upx2px(216) + safeAreaBottom
-  } else if (props.placement === 'above-tab') {
-    bottom = uni.upx2px(128) + safeAreaBottom
-  }
   return clampPosition({
     left: uni.upx2px(PLAYER_LEFT_RPX),
-    bottom
+    bottom: getPlacementBottom(uni.upx2px(28))
   })
 }
 
 function getTouchPoint(event: TouchEvent) {
   const touch = event.touches[0] || event.changedTouches[0]
-  return touch ? { x: touch.clientX, y: touch.clientY } : undefined
+  return { x: touch.clientX, y: touch.clientY }
 }
 
 function handleDragStart(event: TouchEvent) {
   const point = getTouchPoint(event)
-  if (!point) {
-    return
-  }
   const origin = audiobook.playerPosition.value
     ? clampPosition(audiobook.playerPosition.value)
     : getDefaultPosition()
@@ -120,9 +111,6 @@ function handleDragStart(event: TouchEvent) {
 
 function handleDragMove(event: TouchEvent) {
   const point = getTouchPoint(event)
-  if (!point) {
-    return
-  }
   const deltaX = point.x - dragStartX
   const deltaY = point.y - dragStartY
   const dragDistance = Math.sqrt(deltaX * deltaX + deltaY * deltaY)
@@ -154,9 +142,6 @@ function runPlayerAction(action: () => void) {
 
 function openReader() {
   const chapterUrl = audiobook.chapterUrl.value
-  if (!chapterUrl) {
-    return
-  }
   const pages = getCurrentPages()
   const currentIndex = pages.length - 1
   if (pages[currentIndex]?.route === 'pages/reader/reader') {
@@ -173,18 +158,6 @@ function openReader() {
   uni.navigateTo({
     url: `/pages/reader/reader?chapterUrl=${encodeURIComponent(chapterUrl)}&catalogUrl=${encodeURIComponent(catalogUrl)}&bookTitle=${encodeURIComponent(bookTitleValue)}&coverUrl=${encodeURIComponent(coverUrl)}`
   })
-}
-
-function handleCoverError() {
-  coverFailed.value = true
-}
-
-function openSettings() {
-  settingsVisible.value = true
-}
-
-function closeSettings() {
-  settingsVisible.value = false
 }
 </script>
 
@@ -213,7 +186,7 @@ function closeSettings() {
         class="cover-image"
         :src="audiobook.coverUrl.value"
         mode="aspectFill"
-        @error="handleCoverError"
+        @error="coverFailed = true"
       />
       <view v-else class="cover-fallback">{{ coverLetter }}</view>
     </button>
@@ -235,7 +208,11 @@ function closeSettings() {
       </view>
     </button>
 
-    <button class="settings-button" aria-label="听书设置" @tap="runPlayerAction(openSettings)">
+    <button
+      class="settings-button"
+      aria-label="听书设置"
+      @tap="runPlayerAction(audiobook.openSettings)"
+    >
       <view class="secondary-control-inner">
         <view class="tune-icon" aria-hidden="true">
           <view class="tune-row">
@@ -265,17 +242,25 @@ function closeSettings() {
   </view>
 
   <AudiobookSettingsSheet
-    v-if="settingsVisible"
+    v-if="audiobook.settingsVisible.value"
     :sleep-timer="audiobook.sleepTimer.value"
     :playback-rate="audiobook.playbackRate.value"
     :rate-only-for-book="audiobook.rateOnlyForBook.value"
-    @close="closeSettings"
+    :voice-id="audiobook.voiceId.value"
+    :voice-options="audiobook.voiceOptions.value"
+    :voice-loading="audiobook.voiceLoading.value"
+    :voice-error="audiobook.voiceError.value"
+    :current-voice="audiobook.currentVoice.value"
+    @close="audiobook.closeSettings"
     @set-timer-minutes="audiobook.setSleepTimerByMinutes"
     @set-timer-chapters="audiobook.setSleepTimerByChapters"
     @cancel-timer="audiobook.cancelSleepTimer"
     @set-playback-rate="audiobook.setPlaybackRate"
     @set-rate-only-for-book="audiobook.setRateOnlyForBook"
     @reset-playback-rate="audiobook.resetPlaybackRate"
+    @set-voice="audiobook.setPlaybackVoice"
+    @set-voice-favorite="audiobook.setVoiceFavorite"
+    @load-voices="audiobook.loadVoices"
   />
 </template>
 

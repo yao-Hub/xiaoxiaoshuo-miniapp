@@ -1,19 +1,15 @@
 import { computed, ref } from 'vue'
 import { onShow } from '@dcloudio/uni-app'
 import { THEME_PALETTES, THEME_STORAGE_KEY } from '@/constants/theme'
+import { saveUserSettingToServer } from '@/services/user-data'
 import type { ResolvedTheme, ThemeMode } from '@/types/theme'
 import { normalizeThemeMode, oppositeTheme, resolveTheme } from '@/utils/theme'
 
 function detectSystemTheme(): ResolvedTheme {
-  try {
-    const systemTheme = uni.getSystemInfoSync().theme
-    if (systemTheme === 'light' || systemTheme === 'dark') {
-      return systemTheme
-    }
-  } catch {
-    // Keep the app usable when a platform does not expose its system theme.
+  const systemTheme = uni.getSystemInfoSync().theme
+  if (systemTheme === 'light' || systemTheme === 'dark') {
+    return systemTheme
   }
-
   return 'dark'
 }
 
@@ -26,28 +22,19 @@ let initialized = false
 
 function applyNativeTheme() {
   const palette = THEME_PALETTES[resolvedTheme.value]
-  try {
-    uni.setNavigationBarColor({
-      frontColor: palette.foreground === 'white' ? '#ffffff' : '#000000',
-      backgroundColor: palette.background,
-      animation: {
-        duration: 0,
-        timingFunc: 'linear'
-      }
-    })
-  } catch {
-    // Custom-navigation pages may not support native navigation colors.
-  }
-
-  try {
-    uni.setBackgroundColor({
-      backgroundColor: palette.background,
-      backgroundColorTop: palette.background,
-      backgroundColorBottom: palette.background
-    })
-  } catch {
-    // Background color is an optional native enhancement.
-  }
+  uni.setNavigationBarColor({
+    frontColor: palette.foreground === 'white' ? '#ffffff' : '#000000',
+    backgroundColor: palette.background,
+    animation: {
+      duration: 0,
+      timingFunc: 'linear'
+    }
+  })
+  uni.setBackgroundColor({
+    backgroundColor: palette.background,
+    backgroundColorTop: palette.background,
+    backgroundColorBottom: palette.background
+  })
 }
 
 function refreshSystemTheme() {
@@ -78,6 +65,12 @@ function setThemeMode(mode: ThemeMode) {
   themeMode.value = mode
   uni.setStorageSync(THEME_STORAGE_KEY, mode)
   applyNativeTheme()
+  void saveUserSettingToServer('theme', mode).catch(() => undefined)
+}
+
+function reloadThemeFromStorage() {
+  themeMode.value = normalizeThemeMode(uni.getStorageSync(THEME_STORAGE_KEY))
+  applyNativeTheme()
 }
 
 function toggleResolvedTheme() {
@@ -90,6 +83,7 @@ export function useTheme() {
     resolvedTheme,
     themeClass,
     toggleResolvedTheme,
+    reloadThemeFromStorage,
     syncNativeTheme: applyNativeTheme
   }
 }

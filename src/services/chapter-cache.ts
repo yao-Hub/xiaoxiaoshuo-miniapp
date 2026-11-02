@@ -25,10 +25,7 @@ function remember(requestUrl: string, chapter: ChapterContent) {
   cache.delete(cacheKey)
   cache.set(cacheKey, chapter)
   while (cache.size > MAX_CACHED_CHAPTERS) {
-    const oldestKey = cache.keys().next().value
-    if (!oldestKey) {
-      break
-    }
+    const oldestKey = cache.keys().next().value!
     cache.delete(oldestKey)
     removeAliases(oldestKey)
   }

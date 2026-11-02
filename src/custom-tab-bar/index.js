@@ -2,6 +2,7 @@ Component({
   data: {
     selected: 0,
     theme: 'dark',
+    hidden: false,
     list: [
       {
         pagePath: '/pages/index/index',
@@ -21,7 +22,7 @@ Component({
     switchTab(event) {
       const index = Number(event.currentTarget.dataset.index)
       const path = event.currentTarget.dataset.path
-      if (!path || index === this.data.selected) {
+      if (index === this.data.selected) {
         return
       }
 

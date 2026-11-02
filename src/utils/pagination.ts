@@ -99,7 +99,7 @@ function wrapParagraph(paragraph: string, capacity: number): WrappedLine[] {
 }
 
 export function splitChapterParagraphs(content: string) {
-  return String(content || '')
+  return content
     .replace(/\r/g, '')
     .split(/\n{2,}/)
     .map((paragraph) => paragraph.trim())

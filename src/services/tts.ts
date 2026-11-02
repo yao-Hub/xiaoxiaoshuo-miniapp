@@ -5,7 +5,20 @@ import {
   requestJson,
   type RequestCancellation
 } from '@/services/http'
-import type { TtsChapterAudio } from '@/types/tts'
+import type { TtsChapterAudio, TtsVoiceCatalog } from '@/types/tts'
+
+export async function getTtsVoices(gender: 'all' | 'female' | 'male' = 'all') {
+  if (!hasConfiguredApi()) {
+    throw new ApiRequestError('当前为演示模式，暂时无法获取音色。', 0)
+  }
+  return requestJson<TtsVoiceCatalog>(`/api/tts/voices?gender=${encodeURIComponent(gender)}`, {
+    token: getAuthToken(),
+    timeout: 10000,
+    showLoading: false,
+    forbiddenMessage: '当前内容暂不可用。',
+    onUnauthorized: clearAuthSession
+  })
+}
 
 export async function getChapterTts(
   chapterUrl: string,
@@ -13,6 +26,7 @@ export async function getChapterTts(
   bookTitle: string,
   maxCharacters: number,
   rate: number,
+  voice: string,
   cancellation?: RequestCancellation
 ) {
   if (!hasConfiguredApi()) {
@@ -25,7 +39,8 @@ export async function getChapterTts(
       absoluteOffset,
       maxCharacters,
       bookTitle,
-      ...(rate === 1 ? {} : { rate })
+      rate,
+      voice
     },
     token: getAuthToken(),
     timeout: 310000,

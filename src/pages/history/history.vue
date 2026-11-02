@@ -15,6 +15,7 @@ import { openProtectedPage } from '@/services/auth'
 import { trackAnalyticsEvent } from '@/services/analytics'
 import { usePageAnalytics } from '@/composables/usePageAnalytics'
 import { useTabBarTheme } from '@/composables/useTabBarTheme'
+import { syncUserDataFromServer } from '@/services/user-data-sync'
 
 const activeTab = ref<'reading' | 'search'>('reading')
 const readingHistory = ref<ReadingHistoryItem[]>([])
@@ -22,7 +23,8 @@ const searchHistory = ref<string[]>([])
 const { themeClass } = useTabBarTheme(1)
 usePageAnalytics('history')
 
-onShow(() => {
+onShow(async () => {
+  await syncUserDataFromServer()
   refresh()
 })
 

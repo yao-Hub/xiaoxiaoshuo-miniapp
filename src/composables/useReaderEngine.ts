@@ -35,13 +35,13 @@ interface ReaderEngineOptions {
   onChapterCommitted?: (chapter: ChapterContent, pageIndex: number) => void
 }
 
-export interface ReaderRestorePosition {
+interface ReaderRestorePosition {
   pageIndex: number | 'last'
   scrollTop?: number
   absoluteOffset?: number
 }
 
-export interface ReaderSwiperPage {
+interface ReaderSwiperPage {
   key: string
   chapterTitle: string
   page: ReaderPageData
@@ -281,11 +281,7 @@ export function useReaderEngine(options: ReaderEngineOptions) {
       loadAdjacentBlock(adjacentUrls.previousUrl, generation),
       loadAdjacentBlock(adjacentUrls.nextUrl, generation)
     ])
-    if (
-      generation !== preloadGeneration ||
-      chapter.value?.chapterUrl !== sourceUrl ||
-      windowState.value.activeBlockIndex < 0
-    ) {
+    if (generation !== preloadGeneration || chapter.value?.chapterUrl !== sourceUrl) {
       return
     }
 
@@ -546,8 +542,6 @@ export function useReaderEngine(options: ReaderEngineOptions) {
 
   return {
     windowKey,
-    blocks,
-    activeBlockIndex: computed(() => windowState.value.activeBlockIndex),
     chapter,
     chapterUrl,
     catalogUrl,

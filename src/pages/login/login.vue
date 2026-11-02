@@ -4,7 +4,9 @@ import { onLoad } from '@dcloudio/uni-app'
 import GlobalAudiobookPlayer from '@/components/audiobook/GlobalAudiobookPlayer.vue'
 import { login, register } from '@/services/auth'
 import { usePageAnalytics } from '@/composables/usePageAnalytics'
-import { usePageTheme } from '@/composables/useTheme'
+import { useAudiobook } from '@/composables/useAudiobook'
+import { usePageTheme, useTheme } from '@/composables/useTheme'
+import { syncUserDataFromServer } from '@/services/user-data-sync'
 
 const mode = ref<'login' | 'register'>('login')
 const loading = ref(false)
@@ -47,6 +49,9 @@ async function submit() {
     } else {
       await login(username, form.password)
     }
+    await syncUserDataFromServer()
+    useTheme().reloadThemeFromStorage()
+    useAudiobook().reloadUserSettings()
 
     if (redirectUrl.value) {
       const tabPages = ['/pages/index/index', '/pages/history/history', '/pages/profile/profile']

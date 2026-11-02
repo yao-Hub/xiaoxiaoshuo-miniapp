@@ -1,8 +1,6 @@
 import { CONTENT_UNAVAILABLE_MESSAGE } from '@/constants/messages'
 import { requestJson } from '@/services/http'
 
-export { CONTENT_UNAVAILABLE_MESSAGE } from '@/constants/messages'
-
 const TOKEN_KEY = 'xiaoxiaoshuo.authToken'
 
 export interface SessionUser {
@@ -38,15 +36,6 @@ export function getCachedUser(): SessionUser | undefined {
 export function clearAuthSession() {
   uni.removeStorageSync(TOKEN_KEY)
   uni.removeStorageSync('xiaoxiaoshuo.currentUser')
-}
-
-export function requireLogin(redirectUrl = '') {
-  if (getAuthToken()) {
-    return true
-  }
-  const query = redirectUrl ? `?redirect=${encodeURIComponent(redirectUrl)}` : ''
-  uni.navigateTo({ url: `/pages/login/login${query}` })
-  return false
 }
 
 export function openLoginPage(redirectUrl = '') {
@@ -91,8 +80,8 @@ export async function openProtectedPage(url: string) {
   }
 }
 
-export async function login(username: string, password: string) {
-  const result = await requestJson<AuthResponse>('/api/auth/login', {
+async function authenticate(path: string, username: string, password: string) {
+  const result = await requestJson<AuthResponse>(path, {
     method: 'POST',
     data: { username, password },
     timeout: 20000,
@@ -102,15 +91,12 @@ export async function login(username: string, password: string) {
   return result.user
 }
 
-export async function register(username: string, password: string) {
-  const result = await requestJson<AuthResponse>('/api/auth/register', {
-    method: 'POST',
-    data: { username, password },
-    timeout: 20000,
-    showLoading: false
-  })
-  setAuthSession(result)
-  return result.user
+export function login(username: string, password: string) {
+  return authenticate('/api/auth/login', username, password)
+}
+
+export function register(username: string, password: string) {
+  return authenticate('/api/auth/register', username, password)
 }
 
 export async function getCurrentUser(options: { showLoading?: boolean } = {}) {

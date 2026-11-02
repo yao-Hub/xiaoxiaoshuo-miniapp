@@ -35,9 +35,6 @@ export function useAudiobookSleepTimer(onExpire: (mode: 'time' | 'chapters') => 
   }
 
   function expire(mode: 'time' | 'chapters') {
-    if (state.value.mode === 'off') {
-      return
-    }
     stopClock()
     endAt = 0
     state.value = {
@@ -48,9 +45,6 @@ export function useAudiobookSleepTimer(onExpire: (mode: 'time' | 'chapters') => 
   }
 
   function tick() {
-    if (state.value.mode !== 'time') {
-      return
-    }
     const remainingSeconds = Math.max(0, Math.ceil((endAt - Date.now()) / 1000))
     state.value = {
       ...state.value,
@@ -108,9 +102,6 @@ export function useAudiobookSleepTimer(onExpire: (mode: 'time' | 'chapters') => 
   }
 
   function shouldContinueAfterChapterEnd() {
-    if (state.value.stoppedByTimer) {
-      return false
-    }
     if (!checkNow()) {
       return false
     }

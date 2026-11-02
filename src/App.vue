@@ -1,6 +1,8 @@
 <script lang="ts">
-import { initializeTheme } from '@/composables/useTheme'
+import { initializeTheme, useTheme } from '@/composables/useTheme'
+import { useAudiobook } from '@/composables/useAudiobook'
 import { getAnalyticsSessionId, trackAnalyticsDuration } from '@/services/analytics'
+import { syncUserDataFromServer } from '@/services/user-data-sync'
 
 let appSessionStartedAt = 0
 
@@ -11,17 +13,19 @@ export default {
     appSessionStartedAt = Date.now()
   },
   onShow() {
-    if (!appSessionStartedAt) {
-      appSessionStartedAt = Date.now()
-    }
+    appSessionStartedAt = Date.now()
+    void syncUserDataFromServer().then((synced) => {
+      if (synced) {
+        useTheme().reloadThemeFromStorage()
+        useAudiobook().reloadUserSettings()
+      }
+    })
   },
   onHide() {
-    if (appSessionStartedAt) {
-      trackAnalyticsDuration('app_session', appSessionStartedAt, {
-        page: 'app'
-      })
-      appSessionStartedAt = 0
-    }
+    trackAnalyticsDuration('app_session', appSessionStartedAt, {
+      page: 'app'
+    })
+    appSessionStartedAt = 0
   }
 }
 </script>

@@ -6,15 +6,9 @@ export function useReaderViewport() {
   const contentTopInset = ref(topInset.value + uni.upx2px(44))
   const rightInset = ref(16)
 
-  try {
-    const menuButton = uni.getMenuButtonBoundingClientRect?.()
-    if (menuButton) {
-      rightInset.value = Math.max(16, systemInfo.windowWidth - menuButton.left + 8)
-      contentTopInset.value = Math.max(contentTopInset.value, menuButton.bottom + uni.upx2px(8))
-    }
-  } catch {
-    // Keep default spacing when the capsule position is unavailable.
-  }
+  const menuButton = uni.getMenuButtonBoundingClientRect()
+  rightInset.value = Math.max(16, systemInfo.windowWidth - menuButton.left + 8)
+  contentTopInset.value = Math.max(contentTopInset.value, menuButton.bottom + uni.upx2px(8))
 
   const viewportHeight = Math.max(320, systemInfo.windowHeight || systemInfo.screenHeight || 320)
   const windowWidth = Math.max(320, systemInfo.windowWidth || 320)

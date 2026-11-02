@@ -13,12 +13,7 @@ interface PageAnalyticsOptions {
   }
 }
 
-export function usePageAnalytics(
-  page: string,
-  optionsInput: PageAnalyticsOptions | 'page_session' | 'reader_session' = {}
-) {
-  const options: PageAnalyticsOptions =
-    typeof optionsInput === 'string' ? { sessionEventType: optionsInput } : optionsInput
+export function usePageAnalytics(page: string, options: PageAnalyticsOptions = {}) {
   let sessionStartedAt = 0
 
   const finishSession = () => {

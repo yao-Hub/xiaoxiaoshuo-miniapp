@@ -31,10 +31,6 @@ const activeColor = computed(() => READER_SLIDER_COLORS[props.theme].active)
 const trackColor = computed(() => READER_SLIDER_COLORS[props.theme].track)
 const tooltipLeft = computed(() => `${Math.min(84, Math.max(16, props.previewProgress))}%`)
 
-function handleSliderChange(event: { detail: { value: number } }) {
-  emit('seek', event.detail.value)
-}
-
 function goPrevious() {
   if (!props.previousDisabled) {
     emit('previous')
@@ -75,7 +71,7 @@ function goNext() {
           :block-color="activeColor"
           :block-size="22"
           @changing="emit('preview', $event.detail.value)"
-          @change="handleSliderChange"
+          @change="emit('seek', $event.detail.value)"
           @touchend="emit('previewEnd')"
         />
       </view>

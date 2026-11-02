@@ -7,7 +7,7 @@
   right: 0;
   bottom: 0;
   left: 0;
-  z-index: 100;
+  z-index: 50;
   display: flex;
   height: calc(104rpx + env(safe-area-inset-bottom));
   padding: 0 72rpx env(safe-area-inset-bottom);

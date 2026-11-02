@@ -22,6 +22,7 @@ import {
   READER_FONT_SIZE_MIN
 } from '@/constants/reader'
 import { getAuthToken, openLoginPage } from '@/services/auth'
+import { syncUserDataFromServer } from '@/services/user-data-sync'
 import { trackAnalyticsEvent } from '@/services/analytics'
 import type { Chapter, ChapterContent } from '@/types/novel'
 import type {
@@ -186,7 +187,15 @@ const chapterParagraphs = computed(() =>
   chapter.value ? splitChapterParagraphs(chapter.value.content) : []
 )
 const chapterFullText = computed(() => chapterParagraphs.value.join('\n\n'))
-const audiobookHighlightRanges = ref<ReaderHighlightRange[]>()
+const audiobookHighlight = ref<{
+  chapterUrl: string
+  ranges: ReaderHighlightRange[]
+}>()
+const audiobookHighlightRanges = computed(() =>
+  audiobookHighlight.value?.chapterUrl === chapterUrl.value
+    ? audiobookHighlight.value.ranges
+    : undefined
+)
 const audiobookPlaybackPosition = ref<
   | (ReaderPosition & {
       chapterUrl: string
@@ -221,18 +230,16 @@ watch(
   ],
   ([timing, playbackChapterUrl, visible, displayedChapterUrl, , paragraphs, pages]) => {
     if (!visible) {
-      audiobookHighlightRanges.value = undefined
+      audiobookHighlight.value = undefined
       audiobookPlaybackPosition.value = undefined
       audiobookAutoFollowEnabled.value = false
       clearPendingAudiobookStart()
       return
     }
-    if (!visible || playbackChapterUrl !== displayedChapterUrl) {
-      audiobookHighlightRanges.value = undefined
+    if (playbackChapterUrl !== displayedChapterUrl) {
       return
     }
     if (!timing || !isTimelineTextAligned(timing)) {
-      audiobookHighlightRanges.value = undefined
       return
     }
     const playbackPosition = findReaderPositionForOffset(pages, paragraphs, timing.startOffset)
@@ -274,7 +281,10 @@ watch(
       }
     }
     if (ranges.length) {
-      audiobookHighlightRanges.value = ranges
+      audiobookHighlight.value = {
+        chapterUrl: displayedChapterUrl,
+        ranges
+      }
     }
   }
 )
@@ -290,7 +300,10 @@ const isAudiobookChapterDisplayed = computed(
     audiobookPlaybackPosition.value?.chapterUrl === chapterUrl.value
 )
 const isAudiobookOnCurrentPage = computed(
-  () => isAudiobookChapterDisplayed.value && audiobookAutoFollowEnabled.value
+  () =>
+    isAudiobookChapterDisplayed.value &&
+    audiobookPlaybackPageIndex.value !== undefined &&
+    audiobookPlaybackPageIndex.value === currentPageIndex.value
 )
 const showAudiobookPlaybackControls = computed(
   () =>
@@ -484,6 +497,8 @@ watch(
 )
 
 onLoad(async (options) => {
+  await syncUserDataFromServer()
+  Object.assign(readerSettings, getReaderSettings())
   const initialChapterUrl = decodeURIComponent(String(options?.chapterUrl || ''))
   fallbackCatalogUrl.value = decodeURIComponent(String(options?.catalogUrl || ''))
   bookTitle.value = decodeURIComponent(String(options?.bookTitle || ''))
@@ -590,9 +605,6 @@ function persistReadingProgress() {
 
 function handleSwiperFinish(event: SwiperFinishEvent) {
   const nextIndex = Number(event.detail.current)
-  if (!Number.isFinite(nextIndex)) {
-    return
-  }
   void commitSwiperIndex(nextIndex)
 }
 
@@ -781,18 +793,6 @@ function goHome() {
   })
 }
 
-function openPreviousChapter() {
-  void moveToAdjacentChapter('previous', { enterAtStart: true, instant: true })
-}
-
-function openNextChapter() {
-  void moveToAdjacentChapter('next', { enterAtStart: true, instant: true })
-}
-
-function openSettings() {
-  settingsVisible.value = true
-}
-
 function getCurrentListeningStart(): ReaderListeningStart | undefined {
   if (!chapter.value) {
     return undefined
@@ -948,11 +948,7 @@ function scheduleReaderSettingsSave() {
 }
 
 function persistReaderSettings() {
-  try {
-    saveReaderSettings({ ...readerSettings })
-  } catch {
-    uni.showToast({ title: '设置保存失败', icon: 'none' })
-  }
+  saveReaderSettings({ ...readerSettings })
 }
 
 async function retryLoad() {
@@ -1106,10 +1102,10 @@ async function retryLoad() {
       :theme="resolvedTheme"
       :previous-disabled="interactionLocked || loading || !previousChapterUrl"
       :next-disabled="interactionLocked || loading || !nextChapterUrl"
-      @previous="openPreviousChapter"
-      @next="openNextChapter"
+      @previous="moveToAdjacentChapter('previous', { enterAtStart: true, instant: true })"
+      @next="moveToAdjacentChapter('next', { enterAtStart: true, instant: true })"
       @catalog="openCatalog"
-      @settings="openSettings"
+      @settings="settingsVisible = true"
       @toggle-theme="toggleResolvedTheme"
       @preview="previewChapter"
       @preview-end="clearChapterPreview"

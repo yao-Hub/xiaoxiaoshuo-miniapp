@@ -8,6 +8,7 @@ import { trackAnalyticsEvent } from '@/services/analytics'
 import type { ReadingHistoryItem } from '@/types/novel'
 import { usePageAnalytics } from '@/composables/usePageAnalytics'
 import { useTabBarTheme } from '@/composables/useTabBarTheme'
+import { syncUserDataFromServer } from '@/services/user-data-sync'
 
 const query = ref('')
 const searchHistory = ref<string[]>([])
@@ -16,7 +17,8 @@ const suggestions = ['完美世界', '盘龙', '斗破苍穹', '遮天']
 const { themeClass } = useTabBarTheme(0)
 usePageAnalytics('index')
 
-onShow(() => {
+onShow(async () => {
+  await syncUserDataFromServer()
   searchHistory.value = getSearchHistory().slice(0, 6)
   readingHistory.value = getReadingHistory().slice(0, 1)
 })

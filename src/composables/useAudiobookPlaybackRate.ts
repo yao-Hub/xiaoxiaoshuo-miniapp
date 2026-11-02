@@ -1,4 +1,5 @@
 import { ref } from 'vue'
+import { saveUserSettingToServer } from '@/services/user-data'
 
 const STORAGE_KEY = 'audiobook_playback_rate'
 const DEFAULT_RATE = 1
@@ -34,10 +35,12 @@ export function useAudiobookPlaybackRate() {
   let currentBookKey = ''
 
   function persist() {
-    uni.setStorageSync(STORAGE_KEY, {
+    const value = {
       globalRate: storage.globalRate,
       bookRates: storage.bookRates
-    })
+    }
+    uni.setStorageSync(STORAGE_KEY, value)
+    void saveUserSettingToServer('audiobook_playback_rate', value).catch(() => undefined)
   }
 
   function activateBook(bookKey: string) {
@@ -53,7 +56,7 @@ export function useAudiobookPlaybackRate() {
   function setRate(value: number) {
     const rate = normalizeRate(value)
     playbackRate.value = rate
-    if (rateOnlyForBook.value && currentBookKey) {
+    if (rateOnlyForBook.value) {
       storage.bookRates[currentBookKey] = rate
     } else {
       storage.globalRate = rate
@@ -62,20 +65,33 @@ export function useAudiobookPlaybackRate() {
   }
 
   function setOnlyForBook(enabled: boolean) {
-    rateOnlyForBook.value = enabled && Boolean(currentBookKey)
+    rateOnlyForBook.value = enabled
     if (rateOnlyForBook.value) {
       storage.bookRates[currentBookKey] = playbackRate.value
-    } else if (currentBookKey) {
+    } else {
       delete storage.bookRates[currentBookKey]
       storage.globalRate = playbackRate.value
     }
     persist()
   }
 
+  function reload() {
+    const next = loadStorage()
+    storage.globalRate = next.globalRate
+    storage.bookRates = next.bookRates
+    rateOnlyForBook.value =
+      Boolean(currentBookKey) &&
+      Object.prototype.hasOwnProperty.call(storage.bookRates, currentBookKey)
+    playbackRate.value = normalizeRate(
+      rateOnlyForBook.value ? storage.bookRates[currentBookKey] : storage.globalRate
+    )
+  }
+
   return {
     playbackRate,
     rateOnlyForBook,
     activateBook,
+    reload,
     setRate,
     setOnlyForBook
   }

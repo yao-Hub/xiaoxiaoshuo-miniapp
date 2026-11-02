@@ -84,7 +84,7 @@ function beginRequestLoading() {
 }
 
 function endRequestLoading() {
-  activeLoadingRequests = Math.max(0, activeLoadingRequests - 1)
+  activeLoadingRequests -= 1
   if (activeLoadingRequests === 0) {
     uni.hideLoading()
   }
