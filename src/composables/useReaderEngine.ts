@@ -3,6 +3,7 @@ import { loadChapterWithCache } from '@/services/chapter-cache'
 import type { ChapterContent } from '@/types/novel'
 import type { ReaderChapterBlock, ReaderPageData, ReaderSettings } from '@/types/reader'
 import { buildReaderPages, estimateTextLines, splitChapterParagraphs } from '@/utils/pagination'
+import { findReaderPositionForOffset } from '@/utils/reader-position'
 
 const READER_LINE_HEIGHT = 1.95
 const READER_TITLE_LINE_HEIGHT = 1.4
@@ -37,6 +38,7 @@ interface ReaderEngineOptions {
 export interface ReaderRestorePosition {
   pageIndex: number | 'last'
   scrollTop?: number
+  absoluteOffset?: number
 }
 
 export interface ReaderSwiperPage {
@@ -178,7 +180,14 @@ export function useReaderEngine(options: ReaderEngineOptions) {
     }
   }
 
-  function restorePageIndex(pages: ReaderPageData[], restore: ReaderRestorePosition) {
+  function restorePageIndex(
+    pages: ReaderPageData[],
+    paragraphs: string[],
+    restore: ReaderRestorePosition
+  ) {
+    if (restore.absoluteOffset !== undefined) {
+      return findReaderPositionForOffset(pages, paragraphs, restore.absoluteOffset)?.pageIndex ?? 0
+    }
     if (restore.pageIndex === 'last') {
       return Math.max(0, pages.length - 1)
     }
@@ -211,7 +220,8 @@ export function useReaderEngine(options: ReaderEngineOptions) {
       }
 
       const block = createBlock(nextChapter)
-      const pageIndex = restorePageIndex(block.pages, restore)
+      const paragraphs = splitChapterParagraphs(nextChapter.content)
+      const pageIndex = restorePageIndex(block.pages, paragraphs, restore)
       windowState.value = {
         blocks: [block],
         activeBlockIndex: 0,
@@ -221,7 +231,14 @@ export function useReaderEngine(options: ReaderEngineOptions) {
       requestedChapterUrl.value = nextChapter.chapterUrl
       loading.value = false
       if (options.settings.pageMode === 'scroll') {
-        setScrollPosition(restore.scrollTop || estimatePageScrollTop(pageIndex))
+        const position =
+          restore.absoluteOffset === undefined
+            ? undefined
+            : findReaderPositionForOffset(block.pages, paragraphs, restore.absoluteOffset)
+        const centeredTop = position
+          ? estimateScrollTopForReaderPosition(position.paragraphIndex, position.startOffset)
+          : undefined
+        setScrollPosition(restore.scrollTop ?? centeredTop ?? estimatePageScrollTop(pageIndex))
       }
       notifyChapterCommitted()
       return true
@@ -475,6 +492,18 @@ export function useReaderEngine(options: ReaderEngineOptions) {
     )
   }
 
+  function getVisibleScrollLine(scrollTop: number) {
+    let lineTop = scrollShowHeading.value ? headingHeightPx.value : 0
+    for (const line of scrollLines.value) {
+      const lineBottom = lineTop + lineHeightPx.value
+      if (lineBottom > scrollTop) {
+        return line
+      }
+      lineTop = lineBottom + (line.paragraphEnd ? paragraphGapPx.value : 0)
+    }
+    return undefined
+  }
+
   function syncPageIndexFromScroll() {
     const maximum = Math.max(0, estimatedScrollHeight.value - toValue(options.pageViewportHeight))
     if (maximum === 0) {
@@ -547,6 +576,7 @@ export function useReaderEngine(options: ReaderEngineOptions) {
     setScrollPosition,
     estimatePageScrollTop,
     estimateScrollTopForReaderPosition,
+    getVisibleScrollLine,
     syncPageIndexFromScroll,
     getReadingProgress,
     cancelPendingLoad

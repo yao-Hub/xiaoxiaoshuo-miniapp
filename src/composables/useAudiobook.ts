@@ -21,7 +21,6 @@ export interface AudiobookPlayerPosition {
 type AudioContext = ReturnType<typeof uni.createInnerAudioContext>
 
 const SEGMENT_CHARACTERS = 800
-const AUDIO_PREFETCH_CONCURRENCY = 6
 
 function createAudiobookState() {
   const visible = ref(false)
@@ -46,21 +45,10 @@ function createAudiobookState() {
   let queueGeneration = 0
   let activeAudioIndex = 0
   let activeAudioContext: AudioContext | undefined
-  let queueHasMore = false
-  let nextQueueOffset = 0
   let advancingPlan = false
-  const planQueue: TtsChapterAudio[] = []
-  const planWaiters: Array<(plan: TtsChapterAudio | undefined) => void> = []
+  let nextPlanPromise: Promise<TtsChapterAudio | undefined> | undefined
   const prefetchedAudioFiles = new Map<string, string>()
   const audioDownloadTasks = new Map<string, Promise<string | undefined>>()
-  const planAudioReady = new Map<number, Promise<void>>()
-  const audioDownloadQueue: Array<{
-    key: string
-    url: string
-    generation: number
-    settled: () => void
-  }> = []
-  let activeAudioDownloads = 0
 
   const activeTimeline = computed(() => {
     const entries = timeline.value
@@ -86,20 +74,6 @@ function createAudiobookState() {
     return `${plan.startOffset}:${segmentIndex}`
   }
 
-  function notifyPlanWaiters(plan: TtsChapterAudio | undefined) {
-    const waiters = planWaiters.splice(0)
-    waiters.forEach((resolve) => resolve(plan))
-  }
-
-  function enqueuePlan(plan: TtsChapterAudio) {
-    const waiter = planWaiters.shift()
-    if (waiter) {
-      waiter(plan)
-    } else {
-      planQueue.push(plan)
-    }
-  }
-
   function removePrefetchedAudioFiles() {
     const fileSystem = uni.getFileSystemManager()
     prefetchedAudioFiles.forEach((filePath) => {
@@ -107,9 +81,6 @@ function createAudiobookState() {
     })
     prefetchedAudioFiles.clear()
     audioDownloadTasks.clear()
-    planAudioReady.clear()
-    const queuedDownloads = audioDownloadQueue.splice(0)
-    queuedDownloads.forEach((item) => item.settled())
   }
 
   function destroyAudioContexts() {
@@ -122,9 +93,7 @@ function createAudiobookState() {
     queueGeneration += 1
     queueController?.abort()
     queueController = undefined
-    planQueue.length = 0
-    queueHasMore = false
-    notifyPlanWaiters(undefined)
+    nextPlanPromise = undefined
   }
 
   function resetPlaybackState() {
@@ -160,131 +129,90 @@ function createAudiobookState() {
     return result
   }
 
-  function prefetchPlanAudio(plan: TtsChapterAudio, generation: number) {
-    let remaining = plan.segments.length
-    const ready = new Promise<void>((resolve) => {
-      if (!remaining) {
-        resolve()
-        return
-      }
-      const settle = () => {
-        remaining -= 1
-        if (!remaining) {
-          resolve()
+  function prefetchAudioSegment(plan: TtsChapterAudio, segmentIndex: number, generation: number) {
+    const segment = plan.segments[segmentIndex]
+    if (!segment) {
+      return Promise.resolve<string | undefined>(undefined)
+    }
+    const key = audioKey(plan, segmentIndex)
+    const cached = prefetchedAudioFiles.get(key)
+    if (cached) {
+      return Promise.resolve(cached)
+    }
+    const existing = audioDownloadTasks.get(key)
+    if (existing) {
+      return existing
+    }
+    const task = new Promise<string | undefined>((resolve) => {
+      uni.downloadFile({
+        url: resolveApiUrl(segment.url),
+        success(response) {
+          if (response.statusCode < 200 || response.statusCode >= 300) {
+            resolve(undefined)
+            return
+          }
+          if (generation !== queueGeneration) {
+            uni.getFileSystemManager().unlink({
+              filePath: response.tempFilePath,
+              fail() {}
+            })
+            resolve(undefined)
+            return
+          }
+          prefetchedAudioFiles.set(key, response.tempFilePath)
+          resolve(response.tempFilePath)
+        },
+        fail() {
+          resolve(undefined)
         }
-      }
-      plan.segments.forEach((segment, segmentIndex) => {
-        audioDownloadQueue.push({
-          key: audioKey(plan, segmentIndex),
-          url: resolveApiUrl(segment.url),
-          generation,
-          settled: settle
-        })
       })
     })
-    planAudioReady.set(plan.startOffset, ready)
-    scheduleAudioDownloads()
-    return ready
+    audioDownloadTasks.set(key, task)
+    void task.finally(() => {
+      audioDownloadTasks.delete(key)
+    })
+    return task
   }
 
-  function scheduleAudioDownloads() {
-    while (activeAudioDownloads < AUDIO_PREFETCH_CONCURRENCY && audioDownloadQueue.length) {
-      const item = audioDownloadQueue.shift()!
-      if (item.generation !== queueGeneration) {
-        item.settled()
-        continue
-      }
-      if (prefetchedAudioFiles.has(item.key)) {
-        item.settled()
-        continue
-      }
-      activeAudioDownloads += 1
-      const task = new Promise<string | undefined>((resolve) => {
-        uni.downloadFile({
-          url: item.url,
-          success(response) {
-            if (response.statusCode >= 200 && response.statusCode < 300) {
-              if (item.generation !== queueGeneration) {
-                uni.getFileSystemManager().unlink({
-                  filePath: response.tempFilePath,
-                  fail() {}
-                })
-                resolve(undefined)
-                return
-              }
-              prefetchedAudioFiles.set(item.key, response.tempFilePath)
-              resolve(response.tempFilePath)
-            } else {
-              resolve(undefined)
-            }
-          },
-          fail() {
-            resolve(undefined)
-          }
-        })
-      })
-      audioDownloadTasks.set(item.key, task)
-      void task.finally(() => {
-        activeAudioDownloads -= 1
-        audioDownloadTasks.delete(item.key)
-        item.settled()
-        scheduleAudioDownloads()
-      })
+  function ensureNextPlan() {
+    if (!currentPlan?.hasMore || !lastStartOptions) {
+      return Promise.resolve<TtsChapterAudio | undefined>(undefined)
     }
-  }
-
-  async function fillPlanQueue(
-    generation: number,
-    startOffset: number,
-    options: AudiobookStartOptions
-  ) {
-    let offset = startOffset
-    let hasMore = true
-    while (hasMore && generation === queueGeneration) {
-      const controller = createRequestCancellation()
-      queueController = controller
-      try {
-        const result = await getChapterTts(
-          options.chapterUrl,
-          offset,
-          options.bookTitle,
-          SEGMENT_CHARACTERS,
-          controller
-        )
-        if (generation !== queueGeneration) {
-          return
+    if (nextPlanPromise) {
+      return nextPlanPromise
+    }
+    const generation = queueGeneration
+    const controller = createRequestCancellation()
+    queueController = controller
+    nextPlanPromise = getChapterTts(
+      lastStartOptions.chapterUrl,
+      currentPlan.endOffset,
+      lastStartOptions.bookTitle,
+      SEGMENT_CHARACTERS,
+      controller
+    )
+      .then((result) => {
+        if (generation !== queueGeneration || !result.segments.length) {
+          return undefined
         }
-        if (!result.segments.length) {
-          throw new Error('听书音频分段缺失，请重新加载。')
-        }
-        prefetchPlanAudio(result, generation)
-        enqueuePlan(result)
-        offset = result.endOffset
-        hasMore = result.hasMore
-      } catch {
-        if (generation === queueGeneration) {
-          queueHasMore = false
-          notifyPlanWaiters(undefined)
-        }
-        return
-      } finally {
+        return result
+      })
+      .catch(() => undefined)
+      .finally(() => {
         if (queueController === controller) {
           queueController = undefined
         }
-      }
-    }
-    if (generation === queueGeneration) {
-      queueHasMore = false
-      notifyPlanWaiters(undefined)
-    }
+      })
+    return nextPlanPromise
   }
 
-  function createAudioContext(plan: TtsChapterAudio, segmentIndex: number) {
+  function createAudioContext(plan: TtsChapterAudio, segmentIndex: number, offsetMs = 0) {
     const segment = plan.segments[segmentIndex]
     const context = uni.createInnerAudioContext()
     context.obeyMuteSwitch = false
     context.src =
       prefetchedAudioFiles.get(audioKey(plan, segmentIndex)) || resolveApiUrl(segment.url)
+    context.startTime = Math.max(0, Math.min(segment.durationMs, offsetMs) / 1000)
 
     context.onPlay(() => {
       if (activeAudioContext !== context) {
@@ -323,8 +251,7 @@ function createAudiobookState() {
       if (activeAudioContext !== context) {
         return
       }
-      currentTimeMs.value =
-        segment.startMs + Math.max(0, Number(context.currentTime) || 0) * 1000
+      currentTimeMs.value = segment.startMs + Math.max(0, Number(context.currentTime) || 0) * 1000
     })
     context.onEnded(() => {
       if (activeAudioContext !== context || activeAudioIndex !== segmentIndex) {
@@ -348,48 +275,84 @@ function createAudiobookState() {
     return context
   }
 
-  function playAudio(plan: TtsChapterAudio, index: number) {
+  async function prefetchNextAudio(plan: TtsChapterAudio, index: number, generation: number) {
+    if (plan.segments[index + 1]) {
+      await prefetchAudioSegment(plan, index + 1, generation)
+      return
+    }
+    if (!plan.hasMore) {
+      return
+    }
+    const nextPlan = await ensureNextPlan()
+    if (generation === queueGeneration && nextPlan) {
+      await prefetchAudioSegment(nextPlan, 0, generation)
+    }
+  }
+
+  async function playAudio(plan: TtsChapterAudio, index: number, offsetMs = 0) {
     const segment = plan.segments[index]
     if (!segment) {
       return false
     }
+    const generation = queueGeneration
     destroyAudioContexts()
     activeAudioIndex = index
-    currentTimeMs.value = segment.startMs
-    const context = createAudioContext(plan, index)
-    activeAudioContext = context
+    currentTimeMs.value = segment.startMs + Math.max(0, Math.min(segment.durationMs, offsetMs))
     loading.value = true
+    await prefetchAudioSegment(plan, index, generation)
+    if (currentPlan !== plan || generation !== queueGeneration) {
+      return false
+    }
+    const context = createAudioContext(plan, index, offsetMs)
+    activeAudioContext = context
     context.play()
+    void prefetchNextAudio(plan, index, generation)
     return true
   }
 
-  function applyPlan(plan: TtsChapterAudio, options: AudiobookStartOptions) {
+  async function applyPlan(plan: TtsChapterAudio, options: AudiobookStartOptions) {
     destroyAudioContexts()
     currentPlan = plan
     lastStartOptions = options
     timeline.value = plan.timeline
-    playAudio(plan, 0)
+    void ensureNextPlan()
+    await playAudio(plan, 0)
   }
 
   async function advanceAudioPlayback() {
     if (currentPlan?.segments[activeAudioIndex + 1]) {
-      playAudio(currentPlan, activeAudioIndex + 1)
+      await playAudio(currentPlan, activeAudioIndex + 1)
       return
     }
     await advanceTextPlayback()
   }
 
-  async function takeNextPlan() {
-    const queued = planQueue.shift()
-    if (queued) {
-      return queued
+  async function seekToCharacterOffset(characterOffset: number) {
+    const plan = currentPlan
+    if (!plan) {
+      return false
     }
-    if (!queueHasMore) {
-      return undefined
+    const timelineEntry = plan.timeline.find(
+      (entry) => characterOffset >= entry.startOffset && characterOffset < entry.endOffset
+    )
+    if (!timelineEntry) {
+      return false
     }
-    return new Promise<TtsChapterAudio | undefined>((resolve) => {
-      planWaiters.push(resolve)
-    })
+    const segmentIndex = plan.segments.findIndex(
+      (segment) =>
+        timelineEntry.startMs >= segment.startMs &&
+        timelineEntry.startMs < segment.startMs + segment.durationMs
+    )
+    if (segmentIndex < 0) {
+      return false
+    }
+    const generation = queueGeneration
+    const audioPath = await prefetchAudioSegment(plan, segmentIndex, generation)
+    if (!audioPath || currentPlan !== plan || generation !== queueGeneration) {
+      return false
+    }
+    const segment = plan.segments[segmentIndex]
+    return playAudio(plan, segmentIndex, timelineEntry.startMs - segment.startMs)
   }
 
   async function advanceTextPlayback() {
@@ -412,15 +375,15 @@ function createAudiobookState() {
       chapterUrl: chapterUrl.value
     })
     try {
-      const nextPlan = await takeNextPlan()
+      const nextPlan = await ensureNextPlan()
+      nextPlanPromise = undefined
       if (!nextPlan || !lastStartOptions) {
         errorMessage.value = '下一段听书内容加载失败，请重试。'
         playing.value = false
         loading.value = false
         return
       }
-      await (planAudioReady.get(nextPlan.startOffset) || Promise.resolve())
-      applyPlan(nextPlan, {
+      await applyPlan(nextPlan, {
         ...lastStartOptions,
         absoluteStartOffset: nextPlan.startOffset
       })
@@ -450,15 +413,8 @@ function createAudiobookState() {
         return
       }
       chapterTitle.value = result.chapterTitle
-      const generation = ++queueGeneration
-      queueHasMore = result.hasMore
-      nextQueueOffset = result.endOffset
-      prefetchPlanAudio(result, generation)
-      if (queueHasMore) {
-        void fillPlanQueue(generation, nextQueueOffset, options)
-      }
-      await (planAudioReady.get(result.startOffset) || Promise.resolve())
-      applyPlan(result, options)
+      queueGeneration += 1
+      await applyPlan(result, options)
       analytics.trackStart(options, result)
     } catch (error) {
       if (currentRequestId !== requestId) {
@@ -531,6 +487,7 @@ function createAudiobookState() {
     coverUrl,
     playerPosition,
     start,
+    seekToCharacterOffset,
     togglePlay,
     close,
     setPlayerPosition,

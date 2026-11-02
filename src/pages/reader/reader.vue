@@ -1,10 +1,11 @@
 <script setup lang="ts">
-import { computed, reactive, ref, watch } from 'vue'
+import { computed, nextTick, reactive, ref, watch } from 'vue'
 import { onHide, onLoad, onUnload } from '@dcloudio/uni-app'
 import GlobalAudiobookPlayer from '@/components/audiobook/GlobalAudiobookPlayer.vue'
 import ReaderBottomBar from '@/components/reader/ReaderBottomBar.vue'
 import ReaderCatalogSheet from '@/components/reader/ReaderCatalogSheet.vue'
 import ReaderChapterContent from '@/components/reader/ReaderChapterContent.vue'
+import ReaderImmersiveListenBar from '@/components/reader/ReaderImmersiveListenBar.vue'
 import ReaderListenButton from '@/components/reader/ReaderListenButton.vue'
 import ReaderSettingsSheet from '@/components/reader/ReaderSettingsSheet.vue'
 import ReaderTopBar from '@/components/reader/ReaderTopBar.vue'
@@ -23,13 +24,19 @@ import {
 import { getAuthToken, openLoginPage } from '@/services/auth'
 import { trackAnalyticsEvent } from '@/services/analytics'
 import type { Chapter, ChapterContent } from '@/types/novel'
-import type { ReaderHighlightRange, ReaderPageMode, ReaderSettings } from '@/types/reader'
+import type {
+  ReaderHighlightRange,
+  ReaderPageLine,
+  ReaderPageMode,
+  ReaderSettings
+} from '@/types/reader'
 import {
   getReaderLineAbsoluteOffset,
   resolveReaderParagraphOffset,
   splitChapterParagraphs
 } from '@/utils/pagination'
 import { resolveHorizontalReaderTapZone, resolveReaderTapZone } from '@/utils/reader-interaction'
+import { findReaderPositionForOffset, type ReaderPosition } from '@/utils/reader-position'
 import {
   getReaderSettings,
   getReadingRecord,
@@ -48,6 +55,18 @@ interface ReaderScrollEvent {
   detail: {
     scrollTop: number
   }
+}
+
+interface ReaderListeningStart {
+  chapterUrl: string
+  pageIndex: number
+  absoluteOffset: number
+}
+
+interface PendingAudiobookStart {
+  chapterUrl: string
+  pageIndex: number
+  scrollTop: number
 }
 
 const readerSettings = reactive<ReaderSettings>(getReaderSettings())
@@ -90,6 +109,8 @@ const {
   rebuildPages,
   setScrollPosition,
   estimatePageScrollTop,
+  estimateScrollTopForReaderPosition,
+  getVisibleScrollLine,
   syncPageIndexFromScroll,
   getReadingProgress,
   cancelPendingLoad
@@ -166,25 +187,62 @@ const chapterParagraphs = computed(() =>
 )
 const chapterFullText = computed(() => chapterParagraphs.value.join('\n\n'))
 const audiobookHighlightRanges = ref<ReaderHighlightRange[]>()
+const audiobookPlaybackPosition = ref<
+  | (ReaderPosition & {
+      chapterUrl: string
+      absoluteOffset: number
+    })
+  | undefined
+>()
+const audiobookAutoFollowEnabled = ref(false)
+const pendingAudiobookStart = ref<PendingAudiobookStart>()
+let audiobookStartViewChanged = false
+let syncingAudiobookPage = false
+let syncingAudiobookScroll = false
+let audiobookScrollSyncTimer: ReturnType<typeof setTimeout> | undefined
+
+function isTimelineTextAligned(timing: NonNullable<typeof audiobook.activeTimeline.value>) {
+  const expectedText = chapterFullText.value
+    .slice(timing.startOffset, timing.endOffset)
+    .replace(/[\r\n\u2028\u2029]/g, '')
+  return timing.text === expectedText
+}
+
 watch(
   [
     audiobook.activeTimeline,
     audiobook.chapterUrl,
     audiobook.visible,
     chapterUrl,
-    chapterFullText
+    chapterFullText,
+    chapterParagraphs,
+    readerPages
   ],
-  ([timing, playbackChapterUrl, visible, displayedChapterUrl, fullText]) => {
+  ([timing, playbackChapterUrl, visible, displayedChapterUrl, , paragraphs, pages]) => {
+    if (!visible) {
+      audiobookHighlightRanges.value = undefined
+      audiobookPlaybackPosition.value = undefined
+      audiobookAutoFollowEnabled.value = false
+      clearPendingAudiobookStart()
+      return
+    }
     if (!visible || playbackChapterUrl !== displayedChapterUrl) {
       audiobookHighlightRanges.value = undefined
       return
     }
-    if (
-      !timing ||
-      timing.text !==
-        fullText.slice(timing.startOffset, timing.endOffset).replace(/[\r\n\u2028\u2029]/g, '')
-    ) {
+    if (!timing || !isTimelineTextAligned(timing)) {
+      audiobookHighlightRanges.value = undefined
       return
+    }
+    const playbackPosition = findReaderPositionForOffset(pages, paragraphs, timing.startOffset)
+    if (playbackPosition) {
+      const position = {
+        ...playbackPosition,
+        chapterUrl: displayedChapterUrl,
+        absoluteOffset: timing.startOffset
+      }
+      audiobookPlaybackPosition.value = position
+      resolvePendingAudiobookStart(position)
     }
     const ranges: ReaderHighlightRange[] = []
     let cursor = timing.startOffset
@@ -196,11 +254,10 @@ watch(
       }
       const startOffset = location.startOffset
       const available = paragraph.length - startOffset
-      const paragraphStart =
-        getReaderLineAbsoluteOffset(chapterParagraphs.value, {
-          paragraphIndex: location.paragraphIndex,
-          lineStartOffset: 0
-        })
+      const paragraphStart = getReaderLineAbsoluteOffset(chapterParagraphs.value, {
+        paragraphIndex: location.paragraphIndex,
+        lineStartOffset: 0
+      })
       const take = Math.min(available, timing.endOffset - cursor)
       if (take <= 0) {
         break
@@ -220,9 +277,168 @@ watch(
     }
   }
 )
+const audiobookPlaybackPageIndex = computed(() =>
+  audiobookPlaybackPosition.value?.chapterUrl === chapterUrl.value
+    ? audiobookPlaybackPosition.value.pageIndex
+    : undefined
+)
+const isAudiobookChapterDisplayed = computed(
+  () =>
+    audiobook.visible.value &&
+    Boolean(audiobookPlaybackPosition.value) &&
+    audiobookPlaybackPosition.value?.chapterUrl === chapterUrl.value
+)
+const isAudiobookOnCurrentPage = computed(
+  () => isAudiobookChapterDisplayed.value && audiobookAutoFollowEnabled.value
+)
+const showAudiobookPlaybackControls = computed(
+  () =>
+    audiobook.visible.value && (!audiobookPlaybackPosition.value || isAudiobookOnCurrentPage.value)
+)
+const showAudiobookOriginalProgress = computed(
+  () =>
+    audiobook.visible.value &&
+    Boolean(audiobookPlaybackPosition.value) &&
+    (!isAudiobookChapterDisplayed.value || !audiobookAutoFollowEnabled.value)
+)
 const brightnessOverlayStyle = computed(() => ({
   opacity: String((100 - readerSettings.brightness) / 100)
 }))
+
+watch(currentPageIndex, (nextPageIndex) => {
+  if (syncingAudiobookPage || syncingAudiobookScroll) {
+    return
+  }
+  const pendingStart = pendingAudiobookStart.value
+  if (
+    pendingStart &&
+    (pendingStart.pageIndex !== nextPageIndex || pendingStart.chapterUrl !== chapterUrl.value)
+  ) {
+    audiobookStartViewChanged = true
+  }
+  const playbackPageIndex = audiobookPlaybackPageIndex.value
+  if (!audiobook.visible.value || playbackPageIndex === undefined) {
+    return
+  }
+  if (nextPageIndex === playbackPageIndex) {
+    if (audiobook.playing.value) {
+      audiobookAutoFollowEnabled.value = true
+    }
+    return
+  }
+  audiobookAutoFollowEnabled.value = false
+})
+
+watch(chapterUrl, (nextChapterUrl) => {
+  const pendingStart = pendingAudiobookStart.value
+  if (pendingStart && pendingStart.chapterUrl !== nextChapterUrl) {
+    audiobookStartViewChanged = true
+  }
+})
+
+watch(
+  [
+    audiobookPlaybackPageIndex,
+    audiobookPlaybackPosition,
+    audiobook.playing,
+    audiobook.visible,
+    chapterUrl,
+    () => readerSettings.pageMode
+  ],
+  ([playbackPageIndex, playbackPosition, playing, visible, displayedChapterUrl, pageMode]) => {
+    if (
+      !visible ||
+      !playing ||
+      !playbackPosition ||
+      playbackPosition.chapterUrl !== displayedChapterUrl
+    ) {
+      return
+    }
+    if (pageMode !== 'scroll' && playbackPageIndex === currentPageIndex.value) {
+      audiobookAutoFollowEnabled.value = true
+      return
+    }
+    if (!audiobookAutoFollowEnabled.value) {
+      return
+    }
+    if (pageMode === 'scroll') {
+      centerAudiobookPositionInScrollMode(playbackPosition)
+      return
+    }
+    if (playbackPageIndex === undefined || playbackPageIndex === currentPageIndex.value) {
+      return
+    }
+    if (playbackPageIndex < currentPageIndex.value) {
+      audiobookAutoFollowEnabled.value = false
+      return
+    }
+    syncingAudiobookPage = true
+    setPageIndex(playbackPageIndex)
+    void nextTick(() => {
+      syncingAudiobookPage = false
+    })
+  },
+  { flush: 'post' }
+)
+
+function clearAudiobookScrollSyncTimer() {
+  if (audiobookScrollSyncTimer) {
+    clearTimeout(audiobookScrollSyncTimer)
+    audiobookScrollSyncTimer = undefined
+  }
+}
+
+function clearPendingAudiobookStart() {
+  pendingAudiobookStart.value = undefined
+  audiobookStartViewChanged = false
+}
+
+function resolvePendingAudiobookStart(
+  playbackPosition: ReaderPosition & {
+    chapterUrl: string
+    absoluteOffset: number
+  }
+) {
+  const pendingStart = pendingAudiobookStart.value
+  if (!pendingStart) {
+    return
+  }
+  const matchesStartPage =
+    readerSettings.pageMode === 'scroll' || playbackPosition.pageIndex === pendingStart.pageIndex
+  const shouldFollow =
+    !audiobookStartViewChanged &&
+    pendingStart.chapterUrl === playbackPosition.chapterUrl &&
+    matchesStartPage
+  clearPendingAudiobookStart()
+  audiobookAutoFollowEnabled.value = shouldFollow
+  if (shouldFollow && readerSettings.pageMode === 'scroll') {
+    centerAudiobookPositionInScrollMode(playbackPosition)
+  }
+}
+
+function centerAudiobookPositionInScrollMode(position = audiobookPlaybackPosition.value) {
+  if (
+    !position ||
+    position.chapterUrl !== chapterUrl.value ||
+    readerSettings.pageMode !== 'scroll'
+  ) {
+    return
+  }
+  const scrollTop = estimateScrollTopForReaderPosition(
+    position.paragraphIndex,
+    position.startOffset
+  )
+  if (scrollTop === undefined) {
+    return
+  }
+  clearAudiobookScrollSyncTimer()
+  syncingAudiobookScroll = true
+  setScrollPosition(scrollTop)
+  audiobookScrollSyncTimer = setTimeout(() => {
+    syncingAudiobookScroll = false
+    audiobookScrollSyncTimer = undefined
+  }, 600)
+}
 
 watch(
   () => catalogChapters.value.length,
@@ -258,6 +474,7 @@ onUnload(() => {
   persistReadingProgress()
   persistReaderSettings()
   cancelPendingLoad()
+  clearAudiobookScrollSyncTimer()
   if (settingsSaveTimer) {
     clearTimeout(settingsSaveTimer)
     settingsSaveTimer = undefined
@@ -335,6 +552,17 @@ function handleScrollModeScroll(event: ReaderScrollEvent) {
   scrollReaderTop.value = Math.max(0, event.detail.scrollTop)
   lastReaderScrollAt = Date.now()
   syncPageIndexFromScroll()
+  const pendingStart = pendingAudiobookStart.value
+  if (
+    pendingStart &&
+    !syncingAudiobookScroll &&
+    Math.abs(scrollReaderTop.value - pendingStart.scrollTop) > 1
+  ) {
+    audiobookStartViewChanged = true
+  }
+  if (!syncingAudiobookScroll) {
+    audiobookAutoFollowEnabled.value = false
+  }
 
   const now = Date.now()
   if (now - lastScrollPersistAt >= 500) {
@@ -346,6 +574,13 @@ function handleScrollModeScroll(event: ReaderScrollEvent) {
 function captureReaderTouch(event: TouchEvent) {
   tapStartX = event.touches[0]?.clientX || 0
   tapStartY = event.touches[0]?.clientY || 0
+}
+
+function suspendAudiobookAutoFollow() {
+  if (pendingAudiobookStart.value) {
+    audiobookStartViewChanged = true
+  }
+  audiobookAutoFollowEnabled.value = false
 }
 
 function extractTapX(event: MouseEvent | TouchEvent) {
@@ -507,31 +742,94 @@ function openSettings() {
   settingsVisible.value = true
 }
 
-function getCurrentPageStartOffset() {
-  const currentPage = readerPages.value[currentPageIndex.value]
-  const firstLine = currentPage?.lines[0]
-  if (!firstLine) {
+function getCurrentListeningStart(): ReaderListeningStart | undefined {
+  if (!chapter.value) {
     return undefined
   }
-  return getReaderLineAbsoluteOffset(chapterParagraphs.value, firstLine)
+  const line: ReaderPageLine | undefined =
+    readerSettings.pageMode === 'scroll'
+      ? getVisibleScrollLine(scrollReaderTop.value)
+      : readerPages.value[currentPageIndex.value]?.lines[0]
+  if (!line) {
+    return undefined
+  }
+  return {
+    chapterUrl: chapter.value.chapterUrl,
+    pageIndex: currentPageIndex.value,
+    absoluteOffset: getReaderLineAbsoluteOffset(chapterParagraphs.value, line)
+  }
 }
 
-function startAudiobook() {
-  const startOffset = getCurrentPageStartOffset()
-  if (!chapter.value || startOffset === undefined) {
+function startAudiobook(start = getCurrentListeningStart()) {
+  if (!chapter.value || !start) {
     uni.showToast({ title: '无法定位当前页的朗读位置', icon: 'none' })
     return false
   }
   const startOptions = {
-    chapterUrl: chapter.value.chapterUrl,
+    chapterUrl: start.chapterUrl,
     catalogUrl: effectiveCatalogUrl.value,
     bookTitle: bookTitle.value,
     title: chapter.value.title,
     coverUrl: bookCoverUrl.value,
-    absoluteStartOffset: startOffset
+    absoluteStartOffset: start.absoluteOffset
   }
-  void audiobook.start(startOptions)
+  pendingAudiobookStart.value = {
+    chapterUrl: start.chapterUrl,
+    pageIndex: start.pageIndex,
+    scrollTop: scrollReaderTop.value
+  }
+  audiobookStartViewChanged = false
+  audiobookPlaybackPosition.value = undefined
+  audiobookAutoFollowEnabled.value = false
+  void audiobook.start(startOptions).then(() => {
+    if (audiobook.errorMessage.value) {
+      clearPendingAudiobookStart()
+    }
+  })
   return true
+}
+
+async function listenFromCurrentPage() {
+  const start = getCurrentListeningStart()
+  if (
+    start &&
+    audiobook.chapterUrl.value === start.chapterUrl &&
+    (await audiobook.seekToCharacterOffset(start.absoluteOffset))
+  ) {
+    clearPendingAudiobookStart()
+    audiobookAutoFollowEnabled.value = true
+    return true
+  }
+  return startAudiobook(start)
+}
+
+async function locateAudiobookProgress() {
+  clearPendingAudiobookStart()
+  const playbackPosition = audiobookPlaybackPosition.value
+  if (!playbackPosition) {
+    return
+  }
+  if (playbackPosition.chapterUrl !== chapterUrl.value) {
+    const succeeded = await loadDirectChapter(playbackPosition.chapterUrl, {
+      pageIndex: 0,
+      absoluteOffset: playbackPosition.absoluteOffset
+    })
+    if (!succeeded) {
+      uni.showToast({ title: errorMessage.value || '无法定位播放位置', icon: 'none' })
+      return
+    }
+    audiobookAutoFollowEnabled.value = true
+    return
+  }
+  if (readerSettings.pageMode === 'scroll') {
+    centerAudiobookPositionInScrollMode(playbackPosition)
+  } else {
+    syncingAudiobookPage = true
+    setPageIndex(playbackPosition.pageIndex)
+    await nextTick()
+    syncingAudiobookPage = false
+  }
+  audiobookAutoFollowEnabled.value = true
 }
 
 function openCatalog() {
@@ -692,6 +990,7 @@ async function retryLoad() {
         :scroll-top="scrollRestoreTop"
         @tap="handleReaderTap"
         @touchstart="captureReaderTouch"
+        @touchmove="suspendAudiobookAutoFollow"
         @scroll="handleScrollModeScroll"
       >
         <ReaderChapterContent
@@ -724,6 +1023,7 @@ async function retryLoad() {
         :disable-touch="interactionLocked || loading"
         @tap="handleReaderTap"
         @touchstart="captureReaderTouch"
+        @touchmove="suspendAudiobookAutoFollow"
         @animationfinish="handleSwiperFinish"
       >
         <swiper-item v-for="item in swiperPages" :key="item.key">
@@ -772,19 +1072,21 @@ async function retryLoad() {
       :hidden="!toolbarVisible"
     />
 
-    <!--
-      <ReaderImmersiveListenBar
-        v-if="showReaderControls && !toolbarVisible && audiobook.visible.value"
-        :show-original-progress="showAudiobookOriginalProgress"
-        :is-on-playback-page="isAudiobookOnCurrentPage"
-        :playing="audiobook.playing.value"
-        :loading="audiobook.loading.value"
-        :error="Boolean(audiobook.errorMessage.value)"
-        @locate-original="locateAudiobookProgress"
-        @from-current="listenFromCurrentPage"
-        @toggle-play="audiobook.togglePlay"
-      />
-    -->
+    <ReaderImmersiveListenBar
+      v-if="
+        showReaderControls &&
+        !toolbarVisible &&
+        audiobook.visible.value &&
+        (audiobook.loading.value || showAudiobookPlaybackControls || showAudiobookOriginalProgress)
+      "
+      :show-original-progress="showAudiobookOriginalProgress"
+      :is-on-playback-page="showAudiobookPlaybackControls"
+      :playing="audiobook.playing.value"
+      :loading="audiobook.loading.value"
+      @locate-original="locateAudiobookProgress"
+      @from-current="listenFromCurrentPage"
+      @toggle-play="audiobook.togglePlay"
+    />
 
     <ReaderCatalogSheet
       v-if="catalogVisible"
