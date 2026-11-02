@@ -12,6 +12,7 @@ export async function getChapterTts(
   absoluteOffset: number,
   bookTitle: string,
   maxCharacters: number,
+  rate: number,
   cancellation?: RequestCancellation
 ) {
   if (!hasConfiguredApi()) {
@@ -23,7 +24,8 @@ export async function getChapterTts(
       chapterUrl,
       absoluteOffset,
       maxCharacters,
-      bookTitle
+      bookTitle,
+      ...(rate === 1 ? {} : { rate })
     },
     token: getAuthToken(),
     timeout: 310000,

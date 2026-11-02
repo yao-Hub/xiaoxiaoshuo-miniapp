@@ -199,6 +199,7 @@ const pendingAudiobookStart = ref<PendingAudiobookStart>()
 let audiobookStartViewChanged = false
 let syncingAudiobookPage = false
 let syncingAudiobookScroll = false
+let syncingAudiobookChapter = false
 let audiobookScrollSyncTimer: ReturnType<typeof setTimeout> | undefined
 
 function isTimelineTextAligned(timing: NonNullable<typeof audiobook.activeTimeline.value>) {
@@ -334,7 +335,40 @@ watch(chapterUrl, (nextChapterUrl) => {
   if (pendingStart && pendingStart.chapterUrl !== nextChapterUrl) {
     audiobookStartViewChanged = true
   }
+  if (audiobook.visible.value && nextChapterUrl !== audiobook.chapterUrl.value) {
+    audiobookAutoFollowEnabled.value = false
+  }
 })
+
+watch(
+  [audiobook.chapterUrl, audiobook.loading, audiobook.visible],
+  ([playbackChapterUrl, isLoading, visible]) => {
+    if (
+      !visible ||
+      isLoading ||
+      syncingAudiobookChapter ||
+      !playbackChapterUrl ||
+      playbackChapterUrl === chapterUrl.value ||
+      !audiobookAutoFollowEnabled.value
+    ) {
+      return
+    }
+    syncingAudiobookChapter = true
+    void loadDirectChapter(playbackChapterUrl, { pageIndex: 0 })
+      .then((succeeded) => {
+        if (!succeeded) {
+          return
+        }
+        clearPendingAudiobookStart()
+        audiobookAutoFollowEnabled.value = true
+        void ensureCatalog().then(() => refreshWindow())
+      })
+      .finally(() => {
+        syncingAudiobookChapter = false
+      })
+  },
+  { flush: 'post' }
+)
 
 watch(
   [
@@ -495,6 +529,23 @@ function resolveAdjacentUrls(sourceChapter: ChapterContent) {
     previousUrl: sourceChapter.prevUrl,
     nextUrl: sourceChapter.nextUrl
   }
+}
+
+function resolveNextPlaybackChapter(sourceChapterUrl: string) {
+  const chapterIndex = catalogChapters.value.findIndex((item) => item.url === sourceChapterUrl)
+  const nextFromCatalog = chapterIndex >= 0 ? catalogChapters.value[chapterIndex + 1] : undefined
+  if (nextFromCatalog) {
+    return {
+      url: nextFromCatalog.url,
+      title: nextFromCatalog.title
+    }
+  }
+  if (sourceChapterUrl === chapterUrl.value && nextChapterUrl.value) {
+    return {
+      url: nextChapterUrl.value
+    }
+  }
+  return undefined
 }
 
 function handleChapterCommitted(targetChapter: ChapterContent, pageIndex: number) {
@@ -771,7 +822,8 @@ function startAudiobook(start = getCurrentListeningStart()) {
     bookTitle: bookTitle.value,
     title: chapter.value.title,
     coverUrl: bookCoverUrl.value,
-    absoluteStartOffset: start.absoluteOffset
+    absoluteStartOffset: start.absoluteOffset,
+    resolveNextChapter: resolveNextPlaybackChapter
   }
   pendingAudiobookStart.value = {
     chapterUrl: start.chapterUrl,
@@ -781,7 +833,9 @@ function startAudiobook(start = getCurrentListeningStart()) {
   audiobookStartViewChanged = false
   audiobookPlaybackPosition.value = undefined
   audiobookAutoFollowEnabled.value = false
-  void audiobook.start(startOptions).then(() => {
+  const preserveSleepTimer =
+    audiobook.visible.value && audiobook.catalogUrl.value === startOptions.catalogUrl
+  void audiobook.start(startOptions, preserveSleepTimer).then(() => {
     if (audiobook.errorMessage.value) {
       clearPendingAudiobookStart()
     }

@@ -2,9 +2,11 @@
 const props = withDefaults(
   defineProps<{
     zIndex?: number
+    showHandle?: boolean
   }>(),
   {
-    zIndex: 60
+    zIndex: 60,
+    showHandle: true
   }
 )
 
@@ -16,7 +18,7 @@ const emit = defineEmits<{
 <template>
   <view class="bottom-sheet-overlay" :style="{ zIndex: props.zIndex }" @tap="emit('close')">
     <view class="bottom-sheet-panel" @tap.stop>
-      <view class="bottom-sheet-handle" />
+      <view v-if="props.showHandle" class="bottom-sheet-handle" />
       <slot />
     </view>
   </view>
@@ -35,7 +37,7 @@ const emit = defineEmits<{
   width: 100%;
   padding: 12rpx 28rpx calc(24rpx + env(safe-area-inset-bottom));
   color: var(--reader-ink);
-  background: var(--toolbar-bg);
+  background: var(--bottom-sheet-bg, var(--toolbar-bg));
   border-radius: 30rpx 30rpx 0 0;
   box-shadow: 0 -24rpx 70rpx rgba(0, 0, 0, 0.3);
   animation: bottom-sheet-in 180ms ease-out;

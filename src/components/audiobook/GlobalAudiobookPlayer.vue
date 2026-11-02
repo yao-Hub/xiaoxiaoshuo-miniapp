@@ -1,9 +1,10 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
+import AudiobookSettingsSheet from '@/components/audiobook/AudiobookSettingsSheet.vue'
 import { useAudiobook } from '@/composables/useAudiobook'
 
 const PLAYER_LEFT_RPX = 24
-const PLAYER_WIDTH_RPX = 320
+const PLAYER_WIDTH_RPX = 400
 const PLAYER_HEIGHT_RPX = 120
 const PLAYER_EDGE_PX = 8
 const DRAG_THRESHOLD_PX = 6
@@ -23,6 +24,7 @@ const props = withDefaults(
 const audiobook = useAudiobook()
 const coverFailed = ref(false)
 const dragging = ref(false)
+const settingsVisible = ref(false)
 const systemInfo = uni.getSystemInfoSync()
 const windowWidth = systemInfo.windowWidth || 375
 const windowHeight = systemInfo.windowHeight || systemInfo.screenHeight || 667
@@ -54,6 +56,12 @@ const playerStyle = computed(() => {
 
 watch(audiobook.coverUrl, () => {
   coverFailed.value = false
+})
+
+watch(audiobook.visible, (visible) => {
+  if (!visible) {
+    settingsVisible.value = false
+  }
 })
 
 function getMinimumBottom() {
@@ -170,6 +178,14 @@ function openReader() {
 function handleCoverError() {
   coverFailed.value = true
 }
+
+function openSettings() {
+  settingsVisible.value = true
+}
+
+function closeSettings() {
+  settingsVisible.value = false
+}
 </script>
 
 <template>
@@ -219,13 +235,48 @@ function handleCoverError() {
       </view>
     </button>
 
+    <button class="settings-button" aria-label="听书设置" @tap="runPlayerAction(openSettings)">
+      <view class="secondary-control-inner">
+        <view class="tune-icon" aria-hidden="true">
+          <view class="tune-row">
+            <view class="tune-line" />
+            <view class="tune-knob tune-knob--right" />
+          </view>
+          <view class="tune-row">
+            <view class="tune-line" />
+            <view class="tune-knob tune-knob--left" />
+          </view>
+          <view class="tune-row">
+            <view class="tune-line" />
+            <view class="tune-knob tune-knob--center" />
+          </view>
+        </view>
+      </view>
+    </button>
+
     <button class="close-button" aria-label="关闭听书" @tap="runPlayerAction(audiobook.close)">
-      <view class="close-icon" aria-hidden="true">
-        <view class="close-line" />
-        <view class="close-line" />
+      <view class="secondary-control-inner">
+        <view class="close-icon" aria-hidden="true">
+          <view class="close-line" />
+          <view class="close-line" />
+        </view>
       </view>
     </button>
   </view>
+
+  <AudiobookSettingsSheet
+    v-if="settingsVisible"
+    :sleep-timer="audiobook.sleepTimer.value"
+    :playback-rate="audiobook.playbackRate.value"
+    :rate-only-for-book="audiobook.rateOnlyForBook.value"
+    @close="closeSettings"
+    @set-timer-minutes="audiobook.setSleepTimerByMinutes"
+    @set-timer-chapters="audiobook.setSleepTimerByChapters"
+    @cancel-timer="audiobook.cancelSleepTimer"
+    @set-playback-rate="audiobook.setPlaybackRate"
+    @set-rate-only-for-book="audiobook.setRateOnlyForBook"
+    @reset-playback-rate="audiobook.resetPlaybackRate"
+  />
 </template>
 
 <style scoped>
@@ -236,7 +287,7 @@ function handleCoverError() {
   z-index: 26;
   display: flex;
   width: calc(100% - 48rpx);
-  max-width: 320rpx;
+  max-width: 400rpx;
   height: 120rpx;
   padding: 12rpx;
   align-items: center;
@@ -307,7 +358,9 @@ function handleCoverError() {
   place-items: center;
 }
 
-.play-control {
+.play-control,
+.settings-button,
+.close-button {
   display: grid;
   width: 72rpx;
   height: 72rpx;
@@ -320,7 +373,8 @@ function handleCoverError() {
   place-items: center;
 }
 
-.play-control-inner {
+.play-control-inner,
+.secondary-control-inner {
   display: grid;
   width: 100%;
   height: 100%;
@@ -328,6 +382,16 @@ function handleCoverError() {
   background: var(--toolbar-bg);
   border-radius: 50%;
   place-items: center;
+}
+
+.secondary-control-inner {
+  color: var(--reader-ink);
+  background: var(--toolbar-bg);
+  border: 1rpx solid var(--line);
+}
+
+.settings-button .secondary-control-inner {
+  border: 0;
 }
 
 .play-symbol {
@@ -365,27 +429,69 @@ function handleCoverError() {
   color: var(--danger);
 }
 
-.close-button {
-  position: relative;
-  display: grid;
-  width: 64rpx;
-  height: 64rpx;
-  margin: 0;
-  padding: 0;
-  flex: 0 0 64rpx;
-  color: var(--muted);
-  background: transparent;
-  border: 0;
-  border-radius: 50%;
-  place-items: center;
-}
-
+.settings-button:active,
 .close-button:active {
   background: var(--accent-soft);
 }
 
+.tune-icon {
+  position: relative;
+  display: flex;
+  width: 34rpx;
+  height: 28rpx;
+  flex-direction: column;
+  justify-content: space-between;
+}
+
+.tune-row {
+  position: relative;
+  width: 34rpx;
+  height: 2rpx;
+}
+
+.tune-line {
+  position: absolute;
+  inset: 0;
+  background: currentColor;
+  border-radius: 999rpx;
+}
+
+.tune-knob {
+  position: absolute;
+  top: -5rpx;
+  width: 12rpx;
+  height: 12rpx;
+  background: var(--toolbar-bg);
+  border: 2rpx solid currentColor;
+  border-radius: 50%;
+}
+
+.tune-knob--right {
+  right: 2rpx;
+}
+
+.tune-knob--left {
+  left: 5rpx;
+}
+
+.tune-knob--center {
+  left: 11rpx;
+}
+
+.close-control-inner {
+  color: var(--muted);
+}
+
+.close-icon {
+  position: relative;
+  width: 30rpx;
+  height: 30rpx;
+}
+
 .close-line {
   position: absolute;
+  top: 14rpx;
+  left: 0;
   width: 30rpx;
   height: 2rpx;
   background: currentColor;

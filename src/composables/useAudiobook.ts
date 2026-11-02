@@ -1,6 +1,8 @@
 import { computed, ref, shallowRef } from 'vue'
 import type { TtsChapterAudio, TtsTimelineEntry } from '@/types/tts'
 import { useAudiobookAnalytics } from '@/composables/useAudiobookAnalytics'
+import { useAudiobookPlaybackRate } from '@/composables/useAudiobookPlaybackRate'
+import { useAudiobookSleepTimer } from '@/composables/useAudiobookSleepTimer'
 import { createRequestCancellation, resolveApiUrl, type RequestCancellation } from '@/services/http'
 import { getChapterTts } from '@/services/tts'
 
@@ -11,6 +13,12 @@ export interface AudiobookStartOptions {
   title: string
   coverUrl: string
   absoluteStartOffset: number
+  resolveNextChapter?: (chapterUrl: string) => AudiobookChapterLink | undefined
+}
+
+export interface AudiobookChapterLink {
+  url: string
+  title?: string
 }
 
 export interface AudiobookPlayerPosition {
@@ -47,8 +55,11 @@ function createAudiobookState() {
   let activeAudioContext: AudioContext | undefined
   let advancingPlan = false
   let nextPlanPromise: Promise<TtsChapterAudio | undefined> | undefined
+  let resumeChapterAfterTimer: AudiobookStartOptions | undefined
   const prefetchedAudioFiles = new Map<string, string>()
   const audioDownloadTasks = new Map<string, Promise<string | undefined>>()
+  const sleepTimer = useAudiobookSleepTimer(handleSleepTimerExpired)
+  const playbackRateSettings = useAudiobookPlaybackRate()
 
   const activeTimeline = computed(() => {
     const entries = timeline.value
@@ -69,6 +80,26 @@ function createAudiobookState() {
     }
     return active && currentTimeMs.value < active.endMs ? active : undefined
   })
+
+  function getCurrentTimelineOffset() {
+    const entries = timeline.value
+    if (!entries.length) {
+      return currentPlan?.startOffset
+    }
+    let low = 0
+    let high = entries.length - 1
+    let active: TtsTimelineEntry | undefined
+    while (low <= high) {
+      const middle = Math.floor((low + high) / 2)
+      if (entries[middle].startMs <= currentTimeMs.value) {
+        active = entries[middle]
+        low = middle + 1
+      } else {
+        high = middle - 1
+      }
+    }
+    return active?.startOffset ?? currentPlan?.startOffset
+  }
 
   function audioKey(plan: TtsChapterAudio, segmentIndex: number) {
     return `${plan.startOffset}:${segmentIndex}`
@@ -115,12 +146,27 @@ function createAudiobookState() {
     errorMessage.value = ''
   }
 
+  function handleSleepTimerExpired(mode: 'time' | 'chapters') {
+    activeAudioContext?.pause()
+    playing.value = false
+    loading.value = false
+    analytics.finishPlayback('sleep_timer', {
+      bookTitle: bookTitle.value,
+      chapterUrl: chapterUrl.value
+    })
+    uni.showToast({
+      title: mode === 'chapters' ? '定时播放已完成' : '定时关闭时间已到',
+      icon: 'none'
+    })
+  }
+
   async function fetchPlan(options: AudiobookStartOptions) {
     const result = await getChapterTts(
       options.chapterUrl,
       options.absoluteStartOffset,
       options.bookTitle,
       SEGMENT_CHARACTERS,
+      playbackRateSettings.playbackRate.value,
       requestController
     )
     if (!result.segments.length) {
@@ -189,6 +235,7 @@ function createAudiobookState() {
       currentPlan.endOffset,
       lastStartOptions.bookTitle,
       SEGMENT_CHARACTERS,
+      playbackRateSettings.playbackRate.value,
       controller
     )
       .then((result) => {
@@ -216,6 +263,10 @@ function createAudiobookState() {
 
     context.onPlay(() => {
       if (activeAudioContext !== context) {
+        return
+      }
+      if (!sleepTimer.checkNow()) {
+        context.pause()
         return
       }
       playing.value = true
@@ -249,6 +300,10 @@ function createAudiobookState() {
     })
     context.onTimeUpdate(() => {
       if (activeAudioContext !== context) {
+        return
+      }
+      if (!sleepTimer.checkNow()) {
+        context.pause()
         return
       }
       currentTimeMs.value = segment.startMs + Math.max(0, Number(context.currentTime) || 0) * 1000
@@ -355,11 +410,39 @@ function createAudiobookState() {
     return playAudio(plan, segmentIndex, timelineEntry.startMs - segment.startMs)
   }
 
+  function getNextChapterOptions(): AudiobookStartOptions | undefined {
+    if (!lastStartOptions) {
+      return undefined
+    }
+    const nextChapter = lastStartOptions.resolveNextChapter?.(lastStartOptions.chapterUrl)
+    if (!nextChapter || nextChapter.url === lastStartOptions.chapterUrl) {
+      return undefined
+    }
+    return {
+      ...lastStartOptions,
+      chapterUrl: nextChapter.url,
+      title: nextChapter.title || '下一章',
+      absoluteStartOffset: 0
+    }
+  }
+
   async function advanceTextPlayback() {
     if (!currentPlan || advancingPlan) {
       return
     }
     if (!currentPlan.hasMore) {
+      const nextChapterOptions = getNextChapterOptions()
+      if (!sleepTimer.shouldContinueAfterChapterEnd()) {
+        resumeChapterAfterTimer = nextChapterOptions
+        playing.value = false
+        loading.value = false
+        return
+      }
+      if (nextChapterOptions) {
+        await start(nextChapterOptions, true)
+        return
+      }
+      sleepTimer.cancel()
       playing.value = false
       loading.value = false
       analytics.finishPlayback('ended', {
@@ -392,8 +475,13 @@ function createAudiobookState() {
     }
   }
 
-  async function start(options: AudiobookStartOptions) {
+  async function start(options: AudiobookStartOptions, preserveSleepTimer = false) {
+    if (!preserveSleepTimer) {
+      sleepTimer.cancel()
+    }
+    resumeChapterAfterTimer = undefined
     resetPlaybackState()
+    playbackRateSettings.activateBook(options.catalogUrl || options.bookTitle)
     const currentRequestId = ++requestId
     lastStartOptions = options
     visible.value = true
@@ -436,12 +524,42 @@ function createAudiobookState() {
     }
   }
 
+  async function setPlaybackRate(rate: number) {
+    const wasPlaying = playing.value
+    const currentOffset = getCurrentTimelineOffset()
+    playbackRateSettings.setRate(rate)
+    if (!visible.value || !lastStartOptions || currentOffset === undefined) {
+      return
+    }
+    await start(
+      {
+        ...lastStartOptions,
+        absoluteStartOffset: currentOffset
+      },
+      true
+    )
+    if (!wasPlaying && activeAudioContext) {
+      activeAudioContext.pause()
+    }
+  }
+
+  async function resetPlaybackRate() {
+    await setPlaybackRate(1)
+  }
+
   function togglePlay() {
     if (!visible.value || loading.value) {
       return
     }
     if (errorMessage.value && lastStartOptions) {
       void start(lastStartOptions)
+      return
+    }
+    sleepTimer.clearStoppedByTimer()
+    if (resumeChapterAfterTimer) {
+      const nextOptions = resumeChapterAfterTimer
+      resumeChapterAfterTimer = undefined
+      void start(nextOptions, true)
       return
     }
     if (!activeAudioContext) {
@@ -455,6 +573,8 @@ function createAudiobookState() {
   }
 
   function close() {
+    resumeChapterAfterTimer = undefined
+    sleepTimer.cancel()
     resetPlaybackState()
     visible.value = false
     chapterTitle.value = ''
@@ -486,8 +606,17 @@ function createAudiobookState() {
     catalogUrl,
     coverUrl,
     playerPosition,
+    sleepTimer: sleepTimer.state,
+    playbackRate: playbackRateSettings.playbackRate,
+    rateOnlyForBook: playbackRateSettings.rateOnlyForBook,
     start,
     seekToCharacterOffset,
+    setSleepTimerByMinutes: sleepTimer.setMinutes,
+    setSleepTimerByChapters: sleepTimer.setChapters,
+    cancelSleepTimer: sleepTimer.cancel,
+    setPlaybackRate,
+    setRateOnlyForBook: playbackRateSettings.setOnlyForBook,
+    resetPlaybackRate,
     togglePlay,
     close,
     setPlayerPosition,
