@@ -10,6 +10,8 @@ export interface Book {
   readUrl: string
 }
 
+export type SearchMode = 'app' | 'web'
+
 export interface Chapter {
   id: number
   title: string

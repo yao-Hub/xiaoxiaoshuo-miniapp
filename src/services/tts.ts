@@ -32,7 +32,7 @@ export async function getChapterTts(
   if (!hasConfiguredApi()) {
     throw new ApiRequestError('当前为演示模式，暂时无法使用听书。', 0)
   }
-  return requestJson<TtsChapterAudio>('/api/tts/chapter', {
+  return requestJson<TtsChapterAudio>('/api/tts/chapter/synthesize', {
     method: 'POST',
     data: {
       chapterUrl,

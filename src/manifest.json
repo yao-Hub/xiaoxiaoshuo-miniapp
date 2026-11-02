@@ -5,9 +5,6 @@
   "versionName": "0.1.2",
   "versionCode": "102",
   "transformPx": false,
-  "h5": {
-    "title": "西瓜啃书"
-  },
   "mp-weixin": {
     "appid": "wxd5bf129c25b9f9c7",
     "setting": {

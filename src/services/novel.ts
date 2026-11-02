@@ -5,6 +5,7 @@ import type {
   Book,
   Catalog,
   ChapterContent,
+  SearchMode,
   SearchGroup
 } from '@/types/novel'
 import { clearAuthSession, getAuthToken } from '@/services/auth'
@@ -55,7 +56,7 @@ async function request<T>(
   })
 }
 
-export async function searchBooks(query: string): Promise<SearchGroup[]> {
+export async function searchBooks(query: string, mode: SearchMode = 'app'): Promise<SearchGroup[]> {
   const value = query.trim()
   if (!value) {
     return []
@@ -78,7 +79,7 @@ export async function searchBooks(query: string): Promise<SearchGroup[]> {
     ]
   }
 
-  const response = await request<ApiSearchResponse>('/api/search', { q: value })
+  const response = await request<ApiSearchResponse>('/api/search', { q: value, mode })
   const items = response.items || []
   return (response.groups || []).map((group) => {
     const groupItems = items

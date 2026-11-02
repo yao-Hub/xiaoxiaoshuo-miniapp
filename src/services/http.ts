@@ -64,7 +64,7 @@ export function createRequestCancellation(): RequestCancellation {
 }
 
 interface RequestOptions {
-  method?: 'GET' | 'POST' | 'PUT' | 'DELETE'
+  method?: 'GET' | 'POST'
   data?: Record<string, unknown>
   token?: string
   timeout?: number
@@ -126,10 +126,11 @@ export function requestJson<T>(path: string, options: RequestOptions = {}) {
       cleanup()
       reject(error)
     }
+    const method = options.method || 'GET'
     const requestTask = uni.request({
       url: `${API_BASE}${path}`,
-      method: options.method || 'GET',
-      data: options.data,
+      method,
+      data: method === 'POST' ? options.data || {} : options.data,
       header: {
         'content-type': 'application/json',
         ...(options.token ? { Authorization: `Bearer ${options.token}` } : {})

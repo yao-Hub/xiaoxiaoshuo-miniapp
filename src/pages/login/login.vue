@@ -27,6 +27,9 @@ onLoad((options) => {
 })
 
 async function submit() {
+  if (loading.value) {
+    return
+  }
   errorMessage.value = ''
   const username = form.username.trim()
   if (username.length < 3) {
@@ -98,9 +101,11 @@ function toggleMode() {
             v-model="form.password"
             class="input password-input"
             :password="!showPassword"
+            :confirm-type="mode === 'login' ? 'done' : 'next'"
             placeholder="密码，至少 8 位"
             placeholder-class="placeholder"
             maxlength="72"
+            @confirm="mode === 'login' && submit()"
           />
           <button
             class="password-toggle"
@@ -118,9 +123,11 @@ function toggleMode() {
             v-model="form.confirmPassword"
             class="input password-input"
             :password="!showConfirmPassword"
+            confirm-type="done"
             placeholder="再次输入密码"
             placeholder-class="placeholder"
             maxlength="72"
+            @confirm="submit"
           />
           <button
             class="password-toggle"

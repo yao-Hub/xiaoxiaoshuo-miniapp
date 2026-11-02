@@ -3,6 +3,7 @@ import { computed, ref } from 'vue'
 import { onLoad } from '@dcloudio/uni-app'
 import GlobalAudiobookPlayer from '@/components/audiobook/GlobalAudiobookPlayer.vue'
 import BookResultCard from '@/components/book/BookResultCard.vue'
+import BottomSheet from '@/components/common/BottomSheet.vue'
 import { searchBooks } from '@/services/novel'
 import { ApiRequestError } from '@/services/http'
 import { addSearchHistory } from '@/utils/storage'
@@ -10,22 +11,36 @@ import { getAuthToken, openLoginPage, openProtectedPage } from '@/services/auth'
 import { usePageAnalytics } from '@/composables/usePageAnalytics'
 import { usePageTheme } from '@/composables/useTheme'
 import { trackAnalyticsEvent } from '@/services/analytics'
-import type { Book, SearchGroup } from '@/types/novel'
+import type { Book, SearchGroup, SearchMode } from '@/types/novel'
+
+const SEARCH_MODES: Array<{ value: SearchMode; label: string }> = [
+  { value: 'app', label: 'App' },
+  { value: 'web', label: '网页' }
+]
 
 const query = ref('')
 const inputValue = ref('')
 const groups = ref<SearchGroup[]>([])
 const loading = ref(false)
 const errorMessage = ref('')
+const searchMode = ref<SearchMode>('app')
+const modeSheetVisible = ref(false)
 const { themeClass } = usePageTheme()
 usePageAnalytics('search')
 const totalResults = computed(() =>
   groups.value.reduce((total, group) => total + group.items.length, 0)
 )
+const searchModeLabel = computed(
+  () => SEARCH_MODES.find((mode) => mode.value === searchMode.value)?.label || 'App'
+)
 
 onLoad((options) => {
   query.value = decodeURIComponent(String(options?.q || ''))
   inputValue.value = query.value
+  const requestedMode = String(options?.mode || '')
+  if (SEARCH_MODES.some((mode) => mode.value === requestedMode)) {
+    searchMode.value = requestedMode as SearchMode
+  }
   if (query.value) {
     runSearch()
   }
@@ -47,12 +62,13 @@ async function runSearch(value = query.value) {
   addSearchHistory(next)
 
   try {
-    groups.value = await searchBooks(next)
+    groups.value = await searchBooks(next, searchMode.value)
     trackAnalyticsEvent('search', {
       page: 'search',
       value: totalResults.value,
       metadata: {
         query: next,
+        searchMode: searchMode.value,
         resultCount: totalResults.value
       }
     })
@@ -70,7 +86,7 @@ async function runSearch(value = query.value) {
 }
 
 function promptSearchLogin(value: string) {
-  const target = `/pages/search/search?q=${encodeURIComponent(value)}`
+  const target = `/pages/search/search?q=${encodeURIComponent(value)}&mode=${searchMode.value}`
   uni.showModal({
     title: '请先登录',
     content: '登录后可以搜索书名。',
@@ -82,6 +98,17 @@ function promptSearchLogin(value: string) {
       }
     }
   })
+}
+
+function selectSearchMode(mode: SearchMode) {
+  modeSheetVisible.value = false
+  if (searchMode.value === mode) {
+    return
+  }
+  searchMode.value = mode
+  if (query.value) {
+    void runSearch(inputValue.value)
+  }
 }
 
 function openCatalog(book: Book) {
@@ -119,6 +146,10 @@ function openReader(book: Book) {
 <template>
   <view class="page search-page" :class="themeClass">
     <view class="search-bar card">
+      <button class="mode-trigger" @tap="modeSheetVisible = true">
+        <text>{{ searchModeLabel }}</text>
+        <view class="mode-chevron" />
+      </button>
       <input
         v-model="inputValue"
         class="search-input"
@@ -169,6 +200,36 @@ function openReader(book: Book) {
       </view>
     </view>
 
+    <BottomSheet
+      v-if="modeSheetVisible"
+      :show-handle="false"
+      :z-index="120"
+      @close="modeSheetVisible = false"
+    >
+      <view class="mode-sheet-heading">
+        <button
+          class="mode-sheet-back"
+          aria-label="关闭搜索来源选择"
+          @tap="modeSheetVisible = false"
+        >
+          <view class="mode-sheet-back-icon" />
+        </button>
+        <text class="mode-sheet-title">搜索来源</text>
+        <view class="mode-sheet-spacer" />
+      </view>
+      <view class="mode-sheet-options">
+        <button
+          v-for="option in SEARCH_MODES"
+          :key="option.value"
+          class="mode-sheet-option"
+          :class="{ selected: searchMode === option.value }"
+          @tap="selectSearchMode(option.value)"
+        >
+          {{ option.label }}
+        </button>
+      </view>
+    </BottomSheet>
+
     <GlobalAudiobookPlayer />
   </view>
 </template>
@@ -180,7 +241,40 @@ function openReader(book: Book) {
 
 .search-bar {
   display: flex;
+  align-items: center;
   padding: 10rpx;
+}
+
+.mode-trigger {
+  display: flex;
+  width: 116rpx;
+  height: 76rpx;
+  margin: 0 12rpx 0 0;
+  padding: 0 14rpx;
+  align-items: center;
+  justify-content: space-between;
+  flex: 0 0 116rpx;
+  color: var(--ink);
+  background: var(--input-bg);
+  border-radius: 16rpx;
+  font-size: 28rpx;
+  line-height: 76rpx;
+}
+
+.mode-chevron,
+.mode-sheet-back-icon {
+  width: 12rpx;
+  height: 12rpx;
+  border-right: 2rpx solid currentColor;
+  border-bottom: 2rpx solid currentColor;
+}
+
+.mode-chevron {
+  transform: translateY(-3rpx) rotate(45deg);
+}
+
+.mode-sheet-back-icon {
+  transform: rotate(135deg);
 }
 
 .search-input {
@@ -296,5 +390,64 @@ function openReader(book: Book) {
     var(--skeleton-a) 56%
   );
   background-size: 200% 100%;
+}
+
+.mode-sheet-heading {
+  display: grid;
+  grid-template-columns: 72rpx 1fr 72rpx;
+  min-height: 96rpx;
+  align-items: center;
+}
+
+.mode-sheet-back {
+  display: flex;
+  width: 64rpx;
+  height: 64rpx;
+  margin: 0;
+  padding: 0;
+  align-items: center;
+  justify-content: center;
+  color: var(--reader-ink);
+  background: transparent;
+  line-height: 64rpx;
+}
+
+.mode-sheet-title {
+  color: var(--reader-ink);
+  text-align: center;
+  font-size: 34rpx;
+  font-weight: 800;
+}
+
+.mode-sheet-spacer {
+  width: 64rpx;
+}
+
+.mode-sheet-options {
+  display: flex;
+  padding: 20rpx 0 10rpx;
+  flex-direction: column;
+  gap: 14rpx;
+}
+
+.mode-sheet-option {
+  width: 100%;
+  height: 92rpx;
+  margin: 0;
+  padding: 0 26rpx;
+  color: var(--reader-ink);
+  background: var(--surface-strong);
+  border: 1rpx solid transparent;
+  border-radius: 18rpx;
+  font-size: 31rpx;
+  line-height: 92rpx;
+  text-align: left;
+}
+
+.mode-sheet-option.selected {
+  color: var(--accent);
+  background: var(--accent-soft);
+  border-color: var(--accent);
+  font-weight: 700;
 }
 </style>

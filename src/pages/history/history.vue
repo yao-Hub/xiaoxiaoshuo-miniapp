@@ -5,6 +5,7 @@ import GlobalAudiobookPlayer from '@/components/audiobook/GlobalAudiobookPlayer.
 import {
   clearReadingHistory,
   clearSearchHistory,
+  HISTORY_TAB_STORAGE_KEY,
   getReadingHistory,
   getSearchHistory,
   removeReadingHistory,
@@ -25,6 +26,11 @@ usePageAnalytics('history')
 
 onShow(async () => {
   await syncUserDataFromServer()
+  const requestedTab = uni.getStorageSync(HISTORY_TAB_STORAGE_KEY)
+  if (requestedTab === 'search') {
+    activeTab.value = 'search'
+  }
+  uni.removeStorageSync(HISTORY_TAB_STORAGE_KEY)
   refresh()
 })
 

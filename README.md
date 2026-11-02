@@ -22,12 +22,6 @@ npm run dev:mp-weixin
 
 编译结果位于 `dist/dev/mp-weixin`，使用微信开发者工具导入该目录。
 
-H5 预览：
-
-```powershell
-npm run dev:h5
-```
-
 ## 页面
 
 | 页面     | 路径                    |

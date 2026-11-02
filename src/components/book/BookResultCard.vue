@@ -23,9 +23,12 @@ const coverFailed = ref(false)
           lazy-load
           @error="coverFailed = true"
         />
-        <view v-else class="book-cover cover-fallback" :class="`cover-${props.book.source}`">
-          <text class="cover-letter">{{ props.book.title.slice(0, 4) }}</text>
-          <text class="cover-source">{{ props.book.sourceLabel }}</text>
+        <view v-else class="book-cover cover-fallback">
+          <view class="cover-placeholder-book">
+            <view class="cover-placeholder-line" />
+            <view class="cover-placeholder-line short" />
+          </view>
+          <text class="cover-placeholder-label">暂无封面</text>
         </view>
         <view class="book-details">
           <view class="book-title">{{ props.book.title }}</view>
@@ -75,36 +78,39 @@ const coverFailed = ref(false)
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 10rpx;
+  gap: 12rpx;
   color: var(--button-ink);
   background: linear-gradient(145deg, rgba(255, 255, 255, 0.42), transparent 45%), var(--gold);
 }
 
-.cover-kadokado {
-  color: #fff4e2;
-  background: linear-gradient(145deg, rgba(255, 255, 255, 0.2), transparent 45%), #4c3d68;
+.cover-placeholder-book {
+  display: flex;
+  width: 46rpx;
+  height: 52rpx;
+  padding: 10rpx 8rpx;
+  flex-direction: column;
+  justify-content: center;
+  gap: 7rpx;
+  border: 3rpx solid currentColor;
+  border-radius: 4rpx 9rpx 9rpx 4rpx;
 }
 
-.cover-letter {
-  display: -webkit-box;
-  width: 84rpx;
-  overflow: hidden;
-  font-size: 32rpx;
+.cover-placeholder-line {
+  width: 100%;
+  height: 3rpx;
+  background: currentColor;
+  opacity: 0.65;
+}
+
+.cover-placeholder-line.short {
+  width: 64%;
+}
+
+.cover-placeholder-label {
+  font-size: 20rpx;
   font-weight: 800;
-  line-height: 1.25;
+  line-height: 1.2;
   text-align: center;
-  word-break: break-all;
-  -webkit-box-orient: vertical;
-  -webkit-line-clamp: 2;
-}
-
-.cover-source {
-  max-width: 88rpx;
-  overflow: hidden;
-  font-size: 28rpx;
-  font-weight: 700;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
 .book-details {

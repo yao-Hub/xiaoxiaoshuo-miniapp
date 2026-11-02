@@ -2,7 +2,12 @@
 import { ref } from 'vue'
 import { onShow } from '@dcloudio/uni-app'
 import GlobalAudiobookPlayer from '@/components/audiobook/GlobalAudiobookPlayer.vue'
-import { getReadingHistory, getSearchHistory, removeSearchHistory } from '@/utils/storage'
+import {
+  HISTORY_TAB_STORAGE_KEY,
+  getReadingHistory,
+  getSearchHistory,
+  removeSearchHistory
+} from '@/utils/storage'
 import { getAuthToken, openLoginPage, openProtectedPage } from '@/services/auth'
 import { trackAnalyticsEvent } from '@/services/analytics'
 import type { ReadingHistoryItem } from '@/types/novel'
@@ -14,12 +19,13 @@ const query = ref('')
 const searchHistory = ref<string[]>([])
 const readingHistory = ref<ReadingHistoryItem[]>([])
 const suggestions = ['完美世界', '盘龙', '斗破苍穹', '遮天']
+const MAX_RECENT_SEARCHES = 4
 const { themeClass } = useTabBarTheme(0)
 usePageAnalytics('index')
 
 onShow(async () => {
   await syncUserDataFromServer()
-  searchHistory.value = getSearchHistory().slice(0, 6)
+  searchHistory.value = getSearchHistory().slice(0, MAX_RECENT_SEARCHES)
   readingHistory.value = getReadingHistory().slice(0, 1)
 })
 
@@ -62,12 +68,13 @@ function continueReading(item: ReadingHistoryItem) {
 }
 
 function openHistory() {
+  uni.setStorageSync(HISTORY_TAB_STORAGE_KEY, 'search')
   uni.switchTab({ url: '/pages/history/history' })
 }
 
 function deleteRecentSearch(query: string) {
   removeSearchHistory(query)
-  searchHistory.value = getSearchHistory().slice(0, 6)
+  searchHistory.value = getSearchHistory().slice(0, MAX_RECENT_SEARCHES)
 }
 </script>
 

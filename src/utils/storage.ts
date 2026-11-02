@@ -18,6 +18,7 @@ import {
 
 const SEARCH_HISTORY_KEY = 'xiaoxiaoshuo.searchHistory'
 const READING_HISTORY_KEY = 'xiaoxiaoshuo.readingHistory'
+export const HISTORY_TAB_STORAGE_KEY = 'xiaoxiaoshuo.historyTab'
 const MAX_HISTORY_ITEMS = 30
 const READING_HISTORY_SYNC_DELAY_MS = 1000
 let readingHistorySyncTimer: ReturnType<typeof setTimeout> | undefined

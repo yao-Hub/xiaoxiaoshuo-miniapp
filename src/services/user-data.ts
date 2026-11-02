@@ -19,51 +19,50 @@ function requestOptions() {
   }
 }
 
-function mutateUserData(path: string, method: 'PUT' | 'DELETE', data?: Record<string, unknown>) {
+function mutateUserData(path: string, data?: Record<string, unknown>) {
   if (!canSyncUserData()) {
     return Promise.resolve()
   }
   return requestJson<unknown>(path, {
     ...requestOptions(),
-    method,
+    method: 'POST',
     data
   }).then(() => undefined)
 }
 
 export function getUserData() {
-  return requestJson<UserDataSnapshot>('/api/user/data', requestOptions())
+  return requestJson<UserDataSnapshot>('/api/user/sync-data', requestOptions())
 }
 
 export function saveSearchHistoryToServer(query: string) {
-  return mutateUserData('/api/user/search-history', 'PUT', { query })
+  return mutateUserData('/api/user/search-history/save', { query })
 }
 
 export function removeSearchHistoryFromServer(query?: string) {
   const suffix = query ? `?query=${encodeURIComponent(query)}` : ''
-  return mutateUserData(`/api/user/search-history${suffix}`, 'DELETE')
+  return mutateUserData(`/api/user/search-history/remove${suffix}`)
 }
 
 export function saveReadingHistoryToServer(item: ReadingHistoryItem) {
   return mutateUserData(
-    '/api/user/reading-history',
-    'PUT',
+    '/api/user/reading-history/save',
     item as unknown as Record<string, unknown>
   )
 }
 
 export function removeReadingHistoryFromServer(key?: string) {
   const suffix = key ? `?key=${encodeURIComponent(key)}` : ''
-  return mutateUserData(`/api/user/reading-history${suffix}`, 'DELETE')
+  return mutateUserData(`/api/user/reading-history/remove${suffix}`)
 }
 
 export function saveUserSettingToServer(key: string, value: unknown) {
-  return mutateUserData(`/api/user/settings/${encodeURIComponent(key)}`, 'PUT', {
+  return mutateUserData(`/api/user/settings/save/${encodeURIComponent(key)}`, {
     value
   })
 }
 
 export function saveFavoriteVoiceToServer(voiceId: string, favorite: boolean) {
-  return mutateUserData('/api/user/favorite-voices', 'PUT', { voiceId, favorite })
+  return mutateUserData('/api/user/favorite-voices/set', { voiceId, favorite })
 }
 
 export function canSyncUserData() {
