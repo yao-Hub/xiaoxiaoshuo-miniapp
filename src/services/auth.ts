@@ -7,6 +7,8 @@ export interface SessionUser {
   id: string
   publicId: string
   username: string
+  displayName: string
+  avatarUrl: string | null
   accountEnabled: boolean
   accessEnabled: boolean
   accessExpiresAt: string | null
@@ -174,6 +176,19 @@ export async function getCurrentUser(options: { showLoading?: boolean } = {}) {
     token: getAuthToken(),
     timeout: 20000,
     showLoading: options.showLoading,
+    onUnauthorized: clearAuthSession
+  })
+  uni.setStorageSync('xiaoxiaoshuo.currentUser', result.user)
+  return result.user
+}
+
+export async function updateProfile(displayName: string, avatarUrl: string | null) {
+  const result = await requestJson<{ user: SessionUser }>('/api/auth/profile', {
+    method: 'POST',
+    data: { displayName, avatarUrl },
+    token: getAuthToken(),
+    timeout: 30000,
+    showLoading: false,
     onUnauthorized: clearAuthSession
   })
   uni.setStorageSync('xiaoxiaoshuo.currentUser', result.user)
