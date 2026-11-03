@@ -64,11 +64,21 @@ export function addSearchHistory(query: string) {
 }
 
 export function removeSearchHistory(query: string) {
+  removeSearchHistories([query])
+}
+
+export function removeSearchHistories(queries: string[]) {
+  const selected = new Set(queries)
+  if (!selected.size) {
+    return
+  }
   uni.setStorageSync(
     SEARCH_HISTORY_KEY,
-    getSearchHistory().filter((item) => item !== query)
+    getSearchHistory().filter((item) => !selected.has(item))
   )
-  void removeSearchHistoryFromServer(query).catch(() => undefined)
+  for (const query of selected) {
+    void removeSearchHistoryFromServer(query).catch(() => undefined)
+  }
 }
 
 export function clearSearchHistory() {
@@ -135,12 +145,22 @@ export function updateReadingProgress(input: {
 }
 
 export function removeReadingHistory(key: string) {
+  removeReadingHistories([key])
+}
+
+export function removeReadingHistories(keys: string[]) {
+  const selected = new Set(keys)
+  if (!selected.size) {
+    return
+  }
   clearReadingHistorySync()
   uni.setStorageSync(
     READING_HISTORY_KEY,
-    getReadingHistory().filter((item) => item.key !== key)
+    getReadingHistory().filter((item) => !selected.has(item.key))
   )
-  void removeReadingHistoryFromServer(key).catch(() => undefined)
+  for (const key of selected) {
+    void removeReadingHistoryFromServer(key).catch(() => undefined)
+  }
 }
 
 export function clearReadingHistory() {

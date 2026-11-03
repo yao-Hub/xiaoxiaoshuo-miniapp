@@ -44,10 +44,13 @@ export function removeSearchHistoryFromServer(query?: string) {
 }
 
 export function saveReadingHistoryToServer(item: ReadingHistoryItem) {
-  return mutateUserData(
-    '/api/user/reading-history/save',
-    item as unknown as Record<string, unknown>
-  )
+  return mutateUserData('/api/user/reading-history/save', {
+    ...item,
+    coverUrl: item.coverUrl || '',
+    scrollTop: item.scrollTop || 0,
+    pageIndex: item.pageIndex || 0,
+    progress: item.progress || 0
+  })
 }
 
 export function removeReadingHistoryFromServer(key?: string) {

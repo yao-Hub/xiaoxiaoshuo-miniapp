@@ -21,7 +21,7 @@ import {
   READER_FONT_SIZE_MAX,
   READER_FONT_SIZE_MIN
 } from '@/constants/reader'
-import { getAuthToken, openLoginPage } from '@/services/auth'
+import { getAuthToken, getCachedUser, hasAudiobookAccess, openLoginPage } from '@/services/auth'
 import { syncUserDataFromServer } from '@/services/user-data-sync'
 import { trackAnalyticsEvent } from '@/services/analytics'
 import type { Chapter, ChapterContent } from '@/types/novel'
@@ -72,6 +72,7 @@ interface PendingAudiobookStart {
 
 const readerSettings = reactive<ReaderSettings>(getReaderSettings())
 const audiobook = useAudiobook()
+const audiobookEnabled = computed(() => hasAudiobookAccess(getCachedUser()))
 const viewport = useReaderViewport()
 const readerEngine = useReaderEngine({
   settings: readerSettings,
@@ -1021,6 +1022,16 @@ async function retryLoad() {
       </view>
     </view>
 
+    <view v-else-if="chapter?.contentUnavailable" class="reader-state">
+      <view class="state-title">当前来源暂不可读</view>
+      <view class="state-description">
+        {{ chapter.contentUnavailableReason || '该章节需要会员，当前来源暂不提供正文。' }}
+      </view>
+      <view class="state-actions">
+        <button class="state-button" @tap.stop="goBack">返回</button>
+      </view>
+    </view>
+
     <view v-else-if="chapter && !swiperPages.length" class="reader-state">
       <view class="state-title">正在准备正文</view>
       <view class="state-description">请稍候，正在生成阅读页面。</view>
@@ -1113,17 +1124,18 @@ async function retryLoad() {
     />
 
     <ReaderListenButton
-      v-if="toolbarVisible && showReaderControls && !audiobook.visible.value"
+      v-if="audiobookEnabled && toolbarVisible && showReaderControls && !audiobook.visible.value"
       @start="startAudiobook"
     />
 
     <GlobalAudiobookPlayer
       :placement="toolbarVisible ? 'above-toolbar' : 'default'"
-      :hidden="!toolbarVisible"
+      :hidden="!audiobookEnabled || !toolbarVisible"
     />
 
     <ReaderImmersiveListenBar
       v-if="
+        audiobookEnabled &&
         showReaderControls &&
         !toolbarVisible &&
         audiobook.visible.value &&

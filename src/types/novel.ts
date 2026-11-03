@@ -8,6 +8,8 @@ export interface Book {
   coverUrl: string
   catalogUrl: string
   readUrl: string
+  requiresMembership?: boolean
+  unavailableReason?: string
 }
 
 export type SearchMode = 'app' | 'web'
@@ -27,6 +29,8 @@ export interface ChapterContent {
   id: number
   title: string
   content: string
+  contentUnavailable?: boolean
+  contentUnavailableReason?: string
   source: string
   sourceLabel: string
   chapterUrl: string
@@ -54,17 +58,20 @@ export interface SearchGroup {
   count: number
   error: string
   items: Book[]
+  filteredItems: Book[]
 }
 
 export interface ApiSearchGroup {
   source: string
   label: string
   count: number
+  filteredCount?: number
   error: string
 }
 
 export interface ApiSearchResponse {
   items: Book[]
+  filteredItems?: Book[]
   groups: ApiSearchGroup[]
 }
 
@@ -77,6 +84,8 @@ export interface ApiChapterResponse {
   id: number
   title: string
   content: string
+  contentUnavailable?: boolean
+  contentUnavailableReason?: string
   source: string
   sourceLabel: string
   chapterUrl: string

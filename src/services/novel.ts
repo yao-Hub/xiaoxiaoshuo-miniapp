@@ -74,23 +74,27 @@ export async function searchBooks(query: string, mode: SearchMode = 'app'): Prom
         label: '演示站点',
         count: items.length,
         error: '',
-        items
+        items,
+        filteredItems: []
       }
     ]
   }
 
   const response = await request<ApiSearchResponse>('/api/search', { q: value, mode })
   const items = response.items || []
+  const filteredItems = response.filteredItems || []
   return (response.groups || []).map((group) => {
     const groupItems = items
       .filter((item) => item.source === group.source)
       .sort((left, right) => relevanceScore(right.title, value) - relevanceScore(left.title, value))
+    const groupFilteredItems = filteredItems.filter((item) => item.source === group.source)
     return {
       source: group.source,
       label: group.label,
       count: groupItems.length,
       error: group.error || '',
-      items: groupItems
+      items: groupItems,
+      filteredItems: groupFilteredItems
     }
   })
 }

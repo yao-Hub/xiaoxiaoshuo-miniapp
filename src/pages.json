@@ -42,7 +42,7 @@
     {
       "path": "pages/login/login",
       "style": {
-        "navigationBarTitleText": "登录"
+        "navigationBarTitleText": "微信登录"
       }
     }
   ],

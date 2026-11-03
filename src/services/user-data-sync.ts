@@ -37,18 +37,30 @@ async function runSync() {
     const localSearch = getSearchHistory()
     const localReading = getReadingHistory()
 
-    if (data.searchHistory.length) {
-      replaceSearchHistory(data.searchHistory)
-    } else if (localSearch.length) {
-      for (const query of [...localSearch].reverse()) {
+    const mergedSearch = Array.from(new Set([...localSearch, ...data.searchHistory]))
+    replaceSearchHistory(mergedSearch)
+    const currentSearch = getSearchHistory()
+    const serverSearch = new Set(data.searchHistory)
+    for (const query of [...currentSearch].reverse()) {
+      if (!serverSearch.has(query)) {
         await saveSearchHistoryToServer(query)
       }
     }
 
-    if (data.readingHistory.length) {
-      replaceReadingHistory(data.readingHistory)
-    } else if (localReading.length) {
-      for (const item of [...localReading].reverse()) {
+    const serverReadingByKey = new Map(data.readingHistory.map((item) => [item.key, item]))
+    const mergedReadingByKey = new Map(serverReadingByKey)
+    for (const item of localReading) {
+      const serverItem = mergedReadingByKey.get(item.key)
+      if (!serverItem || item.updatedAt > serverItem.updatedAt) {
+        mergedReadingByKey.set(item.key, item)
+      }
+    }
+    replaceReadingHistory(
+      [...mergedReadingByKey.values()].sort((left, right) => right.updatedAt - left.updatedAt)
+    )
+    for (const item of [...getReadingHistory()].reverse()) {
+      const serverItem = serverReadingByKey.get(item.key)
+      if (!serverItem || item.updatedAt > serverItem.updatedAt) {
         await saveReadingHistoryToServer(item)
       }
     }

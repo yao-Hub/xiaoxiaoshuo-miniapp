@@ -8,7 +8,7 @@ import {
   getSearchHistory,
   removeSearchHistory
 } from '@/utils/storage'
-import { getAuthToken, openLoginPage, openProtectedPage } from '@/services/auth'
+import { ensureUserSession, openProtectedPage } from '@/services/auth'
 import { trackAnalyticsEvent } from '@/services/analytics'
 import type { ReadingHistoryItem } from '@/types/novel'
 import { usePageAnalytics } from '@/composables/usePageAnalytics'
@@ -24,29 +24,28 @@ const { themeClass } = useTabBarTheme(0)
 usePageAnalytics('index')
 
 onShow(async () => {
+  try {
+    await ensureUserSession()
+  } catch {
+    // 微信登录失败时保留本地历史，用户可从“我的”重试。
+  }
   await syncUserDataFromServer()
   searchHistory.value = getSearchHistory().slice(0, MAX_RECENT_SEARCHES)
   readingHistory.value = getReadingHistory().slice(0, 1)
 })
 
-function openSearch(value = query.value) {
+async function openSearch(value = query.value) {
   const next = value.trim()
   if (!next) {
     uni.showToast({ title: '请输入书名', icon: 'none' })
     return
   }
-  if (!getAuthToken()) {
-    const target = `/pages/search/search?q=${encodeURIComponent(next)}`
-    uni.showModal({
-      title: '请先登录',
-      content: '登录后可以搜索书名。',
-      confirmText: '去登录',
-      cancelText: '取消',
-      success(result) {
-        if (result.confirm) {
-          openLoginPage(target)
-        }
-      }
+  try {
+    await ensureUserSession()
+  } catch (error) {
+    uni.showToast({
+      title: error instanceof Error ? error.message : '微信登录失败，请重试',
+      icon: 'none'
     })
     return
   }
@@ -90,7 +89,7 @@ function deleteRecentSearch(query: string) {
       <input
         v-model="query"
         class="search-input"
-        placeholder="输入书名或地址"
+        placeholder="输入书名"
         placeholder-class="search-placeholder"
         confirm-type="search"
         @confirm="openSearch()"
@@ -103,7 +102,7 @@ function deleteRecentSearch(query: string) {
         <text class="section-title">继续阅读</text>
       </view>
       <button class="continue-card card" @tap="continueReading(readingHistory[0])">
-        <view>
+        <view class="continue-copy">
           <view class="continue-title">{{ readingHistory[0].bookTitle }}</view>
           <view class="continue-chapter">{{ readingHistory[0].chapterTitle }}</view>
         </view>
@@ -233,20 +232,34 @@ function deleteRecentSearch(query: string) {
   line-height: 1.4;
 }
 
+.continue-copy {
+  min-width: 0;
+  padding-right: 20rpx;
+  flex: 1;
+}
+
 .continue-title {
+  overflow: hidden;
   font-size: 34rpx;
   font-weight: 700;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .continue-chapter {
   margin-top: 9rpx;
+  overflow: hidden;
   color: var(--muted);
   font-size: 28rpx;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .continue-arrow {
+  flex: 0 0 auto;
   color: var(--gold);
   font-size: 28rpx;
+  white-space: nowrap;
 }
 
 .chips {
@@ -273,6 +286,7 @@ function deleteRecentSearch(query: string) {
 
 .recent-chip {
   display: flex;
+  max-width: 100%;
   align-items: center;
   overflow: hidden;
   color: var(--ink);
@@ -283,12 +297,16 @@ function deleteRecentSearch(query: string) {
 
 .recent-chip-main {
   height: 64rpx;
+  max-width: calc(6em + 36rpx);
   margin: 0;
   padding: 0 12rpx 0 24rpx;
+  overflow: hidden;
   color: var(--ink);
   background: transparent;
   font-size: 30rpx;
   line-height: 64rpx;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .recent-chip-delete {

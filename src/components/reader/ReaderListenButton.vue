@@ -7,7 +7,6 @@ const emit = defineEmits<{
 <template>
   <button class="listen-button" @tap.stop="emit('start')">
     <text class="listen-main">听</text>
-    <text class="listen-label">AI</text>
   </button>
 </template>
 
@@ -36,12 +35,5 @@ const emit = defineEmits<{
 .listen-main {
   font-size: 38rpx;
   font-weight: 800;
-}
-
-.listen-label {
-  margin-top: 4rpx;
-  font-size: 18rpx;
-  font-weight: 800;
-  letter-spacing: 2rpx;
 }
 </style>

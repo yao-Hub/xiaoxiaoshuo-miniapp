@@ -3,9 +3,12 @@ import { computed, ref } from 'vue'
 import { onShow } from '@dcloudio/uni-app'
 import GlobalAudiobookPlayer from '@/components/audiobook/GlobalAudiobookPlayer.vue'
 import {
+  ensureUserSession,
   getAuthToken,
   getCachedUser,
   getCurrentUser,
+  hasActiveAccess,
+  hasAudiobookAccess,
   logout,
   openLoginPage,
   type SessionUser
@@ -24,30 +27,29 @@ const themeIconPath = computed(() =>
     : '/static/icons/theme-moon-dark.svg'
 )
 
-const accessText = computed(() => {
-  if (!user.value?.accessEnabled) {
-    return ''
+const accessText = computed(() => (hasActiveAccess(user.value) ? '功能正常' : ''))
+const audiobookAccessText = computed(() => {
+  if (!user.value?.audiobookEnabled) {
+    return '未开通'
   }
-  if (user.value.accessExpiresAt && Date.parse(user.value.accessExpiresAt) <= Date.now()) {
-    return ''
-  }
-  return '功能正常'
+  return hasAudiobookAccess(user.value) ? '正常' : '已到期'
 })
-
 const usernameText = computed(() => {
-  const username = user.value?.username
-  if (typeof username === 'string' && username.trim()) {
-    return username.trim()
+  if (user.value?.publicId) {
+    return `微信用户 ${user.value.publicId.slice(-4).toUpperCase()}`
   }
   return loggedIn.value ? '账号加载中' : '未登录'
 })
-
-const avatarText = computed(() => {
-  const username = user.value?.username
-  return typeof username === 'string' && username.trim() ? username.trim().slice(0, 1) : '西'
-})
+const avatarText = computed(() => usernameText.value.slice(0, 1))
 
 onShow(async () => {
+  if (!getAuthToken()) {
+    try {
+      await ensureUserSession()
+    } catch {
+      // 微信登录失败时保留重新登录入口。
+    }
+  }
   loggedIn.value = Boolean(getAuthToken())
   if (!loggedIn.value) {
     user.value = undefined
@@ -91,7 +93,7 @@ function openLogin() {
         <view
           v-if="!loggedIn || accessText"
           class="status"
-          :class="{ active: user?.accessEnabled }"
+          :class="{ active: hasActiveAccess(user) }"
         >
           {{ loggedIn ? accessText : '登录以获取更多权限' }}
         </view>
@@ -100,12 +102,20 @@ function openLogin() {
 
     <view v-if="loggedIn" class="detail-card card">
       <view class="detail-row">
-        <text>开通状态</text>
-        <text>{{ user?.accessEnabled ? '正常' : '暂不可用' }}</text>
+        <text>阅读权限</text>
+        <text>{{ hasActiveAccess(user) ? '正常' : '暂不可用' }}</text>
       </view>
       <view class="detail-row">
-        <text>到期时间</text>
+        <text>阅读到期时间</text>
         <text>{{ formatTime(user?.accessExpiresAt || null) }}</text>
+      </view>
+      <view class="detail-row">
+        <text>听书权限</text>
+        <text>{{ audiobookAccessText }}</text>
+      </view>
+      <view class="detail-row">
+        <text>听书到期时间</text>
+        <text>{{ formatTime(user?.audiobookExpiresAt || null) }}</text>
       </view>
       <view class="detail-row">
         <text>备注</text>
@@ -119,7 +129,7 @@ function openLogin() {
 
     <view v-if="errorMessage" class="status-tip error">{{ errorMessage }}</view>
     <button v-if="loggedIn" class="logout-button" @tap="logout">退出登录</button>
-    <button v-else class="login-button" @tap="openLogin">登录 / 注册</button>
+    <button v-else class="login-button" @tap="openLogin">微信登录</button>
 
     <GlobalAudiobookPlayer placement="above-tab" />
   </view>

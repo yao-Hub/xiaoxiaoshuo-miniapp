@@ -2,6 +2,7 @@
 import { initializeTheme, useTheme } from '@/composables/useTheme'
 import { useAudiobook } from '@/composables/useAudiobook'
 import { getAnalyticsSessionId, trackAnalyticsDuration } from '@/services/analytics'
+import { ensureUserSession } from '@/services/auth'
 import { syncUserDataFromServer } from '@/services/user-data-sync'
 
 let appSessionStartedAt = 0
@@ -14,12 +15,18 @@ export default {
   },
   onShow() {
     appSessionStartedAt = Date.now()
-    void syncUserDataFromServer().then((synced) => {
+    void (async () => {
+      try {
+        await ensureUserSession()
+      } catch {
+        return
+      }
+      const synced = await syncUserDataFromServer()
       if (synced) {
         useTheme().reloadThemeFromStorage()
         useAudiobook().reloadUserSettings()
       }
-    })
+    })()
   },
   onHide() {
     trackAnalyticsDuration('app_session', appSessionStartedAt, {

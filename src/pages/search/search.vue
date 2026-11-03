@@ -7,7 +7,7 @@ import BottomSheet from '@/components/common/BottomSheet.vue'
 import { searchBooks } from '@/services/novel'
 import { ApiRequestError } from '@/services/http'
 import { addSearchHistory } from '@/utils/storage'
-import { getAuthToken, openLoginPage, openProtectedPage } from '@/services/auth'
+import { ensureUserSession, openProtectedPage } from '@/services/auth'
 import { usePageAnalytics } from '@/composables/usePageAnalytics'
 import { usePageTheme } from '@/composables/useTheme'
 import { trackAnalyticsEvent } from '@/services/analytics'
@@ -17,6 +17,7 @@ const SEARCH_MODES: Array<{ value: SearchMode; label: string }> = [
   { value: 'app', label: 'App' },
   { value: 'web', label: '网页' }
 ]
+const SEARCH_GUIDE_STORAGE_KEY = 'xiaoxiaoshuo.searchGuideSeen'
 
 const query = ref('')
 const inputValue = ref('')
@@ -25,11 +26,17 @@ const loading = ref(false)
 const errorMessage = ref('')
 const searchMode = ref<SearchMode>('app')
 const modeSheetVisible = ref(false)
+const filteredSheetVisible = ref(false)
+const searchGuideVisible = ref(false)
 const { themeClass } = usePageTheme()
 usePageAnalytics('search')
 const totalResults = computed(() =>
   groups.value.reduce((total, group) => total + group.items.length, 0)
 )
+const totalFilteredResults = computed(() =>
+  groups.value.reduce((total, group) => total + group.filteredItems.length, 0)
+)
+const filteredGroups = computed(() => groups.value.filter((group) => group.filteredItems.length))
 const searchModeLabel = computed(
   () => SEARCH_MODES.find((mode) => mode.value === searchMode.value)?.label || 'App'
 )
@@ -51,53 +58,58 @@ async function runSearch(value = query.value) {
   if (!next) {
     return
   }
-  if (!getAuthToken()) {
-    promptSearchLogin(next)
-    return
-  }
 
   query.value = next
   loading.value = true
   errorMessage.value = ''
-  addSearchHistory(next)
+  filteredSheetVisible.value = false
 
   try {
-    groups.value = await searchBooks(next, searchMode.value)
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      await ensureUserSession()
+      try {
+        groups.value = await searchBooks(next, searchMode.value)
+        break
+      } catch (error) {
+        if (attempt === 0 && error instanceof ApiRequestError && error.statusCode === 401) {
+          continue
+        }
+        throw error
+      }
+    }
+    addSearchHistory(next)
+    if (!uni.getStorageSync(SEARCH_GUIDE_STORAGE_KEY)) {
+      searchGuideVisible.value = true
+    }
     trackAnalyticsEvent('search', {
       page: 'search',
       value: totalResults.value,
       metadata: {
         query: next,
         searchMode: searchMode.value,
-        resultCount: totalResults.value
+        resultCount: totalResults.value,
+        freeResultCount: totalResults.value,
+        filteredResultCount: totalFilteredResults.value,
+        hasFreeFullBook: totalResults.value > 0,
+        sourceResults: groups.value.map((group) => ({
+          source: group.source,
+          label: group.label,
+          freeResultCount: group.items.length,
+          filteredResultCount: group.filteredItems.length,
+          error: group.error
+        }))
       }
     })
   } catch (error) {
-    if (error instanceof ApiRequestError && error.statusCode === 401) {
-      groups.value = []
-      loading.value = false
-      promptSearchLogin(next)
-      return
-    }
     errorMessage.value = error instanceof Error ? error.message : String(error)
   } finally {
     loading.value = false
   }
 }
 
-function promptSearchLogin(value: string) {
-  const target = `/pages/search/search?q=${encodeURIComponent(value)}&mode=${searchMode.value}`
-  uni.showModal({
-    title: '请先登录',
-    content: '登录后可以搜索书名。',
-    confirmText: '去登录',
-    cancelText: '取消',
-    success(result) {
-      if (result.confirm) {
-        openLoginPage(target)
-      }
-    }
-  })
+function dismissSearchGuide() {
+  searchGuideVisible.value = false
+  uni.setStorageSync(SEARCH_GUIDE_STORAGE_KEY, true)
 }
 
 function selectSearchMode(mode: SearchMode) {
@@ -118,7 +130,8 @@ function openCatalog(book: Book) {
     metadata: { source: book.source, action: 'catalog' }
   })
   openProtectedPage(
-    `/pages/catalog/catalog?url=${encodeURIComponent(book.catalogUrl)}&title=${encodeURIComponent(book.title)}&coverUrl=${encodeURIComponent(book.coverUrl)}`
+    `/pages/catalog/catalog?url=${encodeURIComponent(book.catalogUrl)}&title=${encodeURIComponent(book.title)}&coverUrl=${encodeURIComponent(book.coverUrl)}`,
+    { requireContentAccess: false }
   )
 }
 
@@ -161,12 +174,29 @@ function openReader(book: Book) {
       <button class="search-button" @tap="runSearch(inputValue)">搜索</button>
     </view>
 
+    <view v-if="searchGuideVisible" class="search-guide">
+      <view class="search-guide-copy">
+        <view class="search-guide-title">没找到合适的？</view>
+        <view class="search-guide-text">可切换左侧来源，或查看已过滤书籍。</view>
+      </view>
+      <button class="search-guide-close" @tap="dismissSearchGuide">知道了</button>
+    </view>
+
     <view class="result-head">
       <view>
         <view class="result-title">“{{ query }}”</view>
         <view class="result-meta">名称完全匹配的作品优先显示</view>
       </view>
-      <text class="result-count">{{ totalResults }} 本</text>
+      <view class="result-summary">
+        <text class="result-count">{{ totalResults }} 本</text>
+        <button
+          v-if="totalFilteredResults"
+          class="filtered-entry"
+          @tap="filteredSheetVisible = true"
+        >
+          查看已过滤 {{ totalFilteredResults }} 本
+        </button>
+      </view>
     </view>
 
     <view v-if="loading" class="loading-state">
@@ -228,6 +258,45 @@ function openReader(book: Book) {
           {{ option.label }}
         </button>
       </view>
+    </BottomSheet>
+
+    <BottomSheet
+      v-if="filteredSheetVisible"
+      :show-handle="false"
+      :z-index="121"
+      @close="filteredSheetVisible = false"
+    >
+      <view class="mode-sheet-heading">
+        <button
+          class="mode-sheet-back"
+          aria-label="关闭已过滤书籍"
+          @tap="filteredSheetVisible = false"
+        >
+          <view class="mode-sheet-back-icon" />
+        </button>
+        <text class="mode-sheet-title">已过滤书籍</text>
+        <view class="mode-sheet-spacer" />
+      </view>
+      <view class="filtered-sheet-summary">
+        共 {{ totalFilteredResults }} 本，仅展示结果，不提供付费正文。
+      </view>
+      <scroll-view class="filtered-sheet-scroll" scroll-y>
+        <view v-for="group in filteredGroups" :key="group.source" class="filtered-group">
+          <view class="filtered-group-head">
+            <text>{{ group.label }}</text>
+            <text>{{ group.filteredItems.length }}</text>
+          </view>
+          <view class="filtered-book-list">
+            <view v-for="book in group.filteredItems" :key="book.id" class="filtered-book card">
+              <view class="filtered-book-title">{{ book.title }}</view>
+              <view v-if="book.author" class="filtered-book-author">{{ book.author }}</view>
+              <view class="filtered-book-reason">
+                {{ book.unavailableReason || '需要会员或付费阅读' }}
+              </view>
+            </view>
+          </view>
+        </view>
+      </scroll-view>
     </BottomSheet>
 
     <GlobalAudiobookPlayer />
@@ -302,6 +371,47 @@ function openReader(book: Book) {
   line-height: 76rpx;
 }
 
+.search-guide {
+  display: flex;
+  margin-top: 22rpx;
+  padding: 20rpx 22rpx;
+  align-items: center;
+  gap: 20rpx;
+  background: var(--accent-soft);
+  border: 1rpx solid rgba(245, 200, 76, 0.28);
+  border-radius: 18rpx;
+}
+
+.search-guide-copy {
+  min-width: 0;
+  flex: 1;
+}
+
+.search-guide-title {
+  font-size: 28rpx;
+  font-weight: 700;
+}
+
+.search-guide-text {
+  margin-top: 6rpx;
+  color: var(--muted);
+  font-size: 25rpx;
+  line-height: 1.5;
+}
+
+.search-guide-close {
+  height: 54rpx;
+  margin: 0;
+  padding: 0 18rpx;
+  flex: 0 0 auto;
+  color: var(--button-ink);
+  background: var(--gold);
+  border-radius: 999rpx;
+  font-size: 25rpx;
+  font-weight: 700;
+  line-height: 54rpx;
+}
+
 .result-head {
   display: flex;
   align-items: flex-end;
@@ -323,6 +433,23 @@ function openReader(book: Book) {
 .result-count {
   color: var(--gold);
   font-size: 28rpx;
+}
+
+.result-summary {
+  display: flex;
+  align-items: flex-end;
+  flex-direction: column;
+  gap: 8rpx;
+}
+
+.filtered-entry {
+  height: auto;
+  margin: 0;
+  padding: 0;
+  color: var(--muted);
+  background: transparent;
+  font-size: 24rpx;
+  line-height: 1.4;
 }
 
 .group-list,
@@ -449,5 +576,58 @@ function openReader(book: Book) {
   background: var(--accent-soft);
   border-color: var(--accent);
   font-weight: 700;
+}
+
+.filtered-sheet-summary {
+  padding: 4rpx 0 18rpx;
+  color: var(--muted);
+  font-size: 25rpx;
+}
+
+.filtered-sheet-scroll {
+  max-height: 62vh;
+}
+
+.filtered-group + .filtered-group {
+  margin-top: 26rpx;
+}
+
+.filtered-group-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 12rpx;
+  color: var(--muted);
+  font-size: 26rpx;
+  font-weight: 600;
+}
+
+.filtered-book-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12rpx;
+}
+
+.filtered-book {
+  padding: 20rpx;
+  color: var(--reader-ink);
+  background: var(--surface-strong);
+}
+
+.filtered-book-title {
+  font-size: 29rpx;
+  font-weight: 700;
+}
+
+.filtered-book-author {
+  margin-top: 6rpx;
+  color: var(--muted);
+  font-size: 25rpx;
+}
+
+.filtered-book-reason {
+  margin-top: 8rpx;
+  color: var(--danger);
+  font-size: 24rpx;
 }
 </style>

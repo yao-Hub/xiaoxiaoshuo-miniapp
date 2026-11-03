@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
-import { onLoad } from '@dcloudio/uni-app'
+import { onLoad, onPageScroll } from '@dcloudio/uni-app'
 import GlobalAudiobookPlayer from '@/components/audiobook/GlobalAudiobookPlayer.vue'
 import { getCatalog } from '@/services/novel'
 import { usePageAnalytics } from '@/composables/usePageAnalytics'
@@ -17,6 +17,7 @@ const loading = ref(true)
 const errorMessage = ref('')
 const ascending = ref(true)
 const coverFailed = ref(false)
+const showBackToTop = ref(false)
 const { themeClass } = usePageTheme()
 usePageAnalytics('catalog')
 
@@ -43,6 +44,10 @@ onLoad(async (options) => {
   }
 })
 
+onPageScroll(({ scrollTop }) => {
+  showBackToTop.value = scrollTop > 520
+})
+
 function openChapter(chapter: Chapter) {
   trackAnalyticsEvent('reader_open', {
     page: 'catalog',
@@ -52,6 +57,13 @@ function openChapter(chapter: Chapter) {
   })
   uni.navigateTo({
     url: `/pages/reader/reader?chapterUrl=${encodeURIComponent(chapter.url)}&catalogUrl=${encodeURIComponent(book.value?.catalogUrl || catalogUrl.value)}&bookTitle=${encodeURIComponent(book.value?.title || initialTitle.value)}&coverUrl=${encodeURIComponent(book.value?.coverUrl || initialCoverUrl.value)}`
+  })
+}
+
+function backToTop() {
+  uni.pageScrollTo({
+    scrollTop: 0,
+    duration: 300
   })
 }
 </script>
@@ -101,6 +113,10 @@ function openChapter(chapter: Chapter) {
           <text class="chapter-arrow">›</text>
         </button>
       </view>
+
+      <button v-if="showBackToTop" class="back-to-top" aria-label="返回目录顶部" @tap="backToTop">
+        <view class="back-to-top-icon" />
+      </button>
     </template>
 
     <GlobalAudiobookPlayer />
@@ -216,5 +232,32 @@ function openChapter(chapter: Chapter) {
 .chapter-arrow {
   color: var(--muted);
   font-size: 34rpx;
+}
+
+.back-to-top {
+  position: fixed;
+  right: 24rpx;
+  bottom: calc(32rpx + env(safe-area-inset-bottom));
+  z-index: 25;
+  display: grid;
+  width: 72rpx;
+  height: 72rpx;
+  margin: 0;
+  padding: 0;
+  color: var(--button-ink);
+  background: var(--gold);
+  border: 1rpx solid rgba(255, 255, 255, 0.24);
+  border-radius: 50%;
+  box-shadow: 0 10rpx 28rpx var(--shadow);
+  place-items: center;
+}
+
+.back-to-top-icon {
+  width: 20rpx;
+  height: 20rpx;
+  margin-top: 8rpx;
+  border-top: 4rpx solid currentColor;
+  border-left: 4rpx solid currentColor;
+  transform: rotate(45deg);
 }
 </style>
