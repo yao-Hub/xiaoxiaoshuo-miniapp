@@ -565,11 +565,13 @@ function createAudiobookState() {
   }
 
   function setPlaybackRate(rate: number) {
+    abortQueuedWork()
     playbackRateSettings.setRate(rate)
     scheduleAudioPreferenceRestart(PLAYBACK_RATE_RESTART_DELAY_MS)
   }
 
   function setPlaybackVoice(voiceId: string) {
+    abortQueuedWork()
     voiceSettings.setVoice(voiceId)
     scheduleAudioPreferenceRestart(VOICE_RESTART_DELAY_MS)
   }

@@ -241,6 +241,7 @@ watch(
       return
     }
     if (!timing) {
+      audiobookHighlight.value = undefined
       return
     }
     if (!isTimelineTextAligned(timing)) {
@@ -290,6 +291,8 @@ watch(
         chapterUrl: displayedChapterUrl,
         ranges
       }
+    } else {
+      audiobookHighlight.value = undefined
     }
   }
 )
