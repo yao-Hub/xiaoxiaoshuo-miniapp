@@ -29,7 +29,7 @@ export interface AudiobookPlayerPosition {
 
 type AudioContext = ReturnType<typeof uni.createInnerAudioContext>
 
-const SEGMENT_CHARACTERS = 800
+const SEGMENT_CHARACTERS = 400
 const PLAYBACK_RATE_RESTART_DELAY_MS = 500
 const VOICE_RESTART_DELAY_MS = 200
 

@@ -240,7 +240,11 @@ watch(
     if (playbackChapterUrl !== displayedChapterUrl) {
       return
     }
-    if (!timing || !isTimelineTextAligned(timing)) {
+    if (!timing) {
+      return
+    }
+    if (!isTimelineTextAligned(timing)) {
+      audiobookHighlight.value = undefined
       return
     }
     const playbackPosition = findReaderPositionForOffset(pages, paragraphs, timing.startOffset)
