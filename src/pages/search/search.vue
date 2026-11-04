@@ -1,9 +1,8 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
-import { onLoad } from '@dcloudio/uni-app'
+import { onLoad, onPageScroll, onReachBottom, onShow } from '@dcloudio/uni-app'
 import GlobalAudiobookPlayer from '@/components/audiobook/GlobalAudiobookPlayer.vue'
 import BookResultCard from '@/components/book/BookResultCard.vue'
-import BottomSheet from '@/components/common/BottomSheet.vue'
 import { searchBooks } from '@/services/novel'
 import { ApiRequestError } from '@/services/http'
 import { addSearchHistory } from '@/utils/storage'
@@ -11,47 +10,57 @@ import { ensureUserSession, openProtectedPage } from '@/services/auth'
 import { usePageAnalytics } from '@/composables/usePageAnalytics'
 import { usePageTheme } from '@/composables/useTheme'
 import { trackAnalyticsEvent } from '@/services/analytics'
-import type { Book, SearchGroup, SearchMode } from '@/types/novel'
+import type { Book } from '@/types/novel'
 
-const SEARCH_MODES: Array<{ value: SearchMode; label: string }> = [
-  { value: 'app', label: 'App' },
-  { value: 'web', label: '网页' }
-]
-const SEARCH_GUIDE_STORAGE_KEY = 'xiaoxiaoshuo.searchGuideSeen'
-
+const DISPLAY_MODE_STORAGE_KEY = 'xiaoxiaoshuo.searchDisplayMode'
+const SEARCH_PAGE_SIZE = 20
 const query = ref('')
 const inputValue = ref('')
-const groups = ref<SearchGroup[]>([])
+const books = ref<Book[]>([])
 const loading = ref(false)
+const loadingMore = ref(false)
 const errorMessage = ref('')
-const searchMode = ref<SearchMode>('app')
-const modeSheetVisible = ref(false)
-const filteredSheetVisible = ref(false)
-const searchGuideVisible = ref(false)
+const page = ref(1)
+const hasMore = ref(false)
+const showBackToTop = ref(false)
+const displayMode = ref<'list' | 'grid'>(readDisplayMode())
+const bookColumns = computed(() => [
+  books.value.filter((_, index) => index % 2 === 0),
+  books.value.filter((_, index) => index % 2 === 1)
+])
 const { themeClass } = usePageTheme()
 usePageAnalytics('search')
-const totalResults = computed(() =>
-  groups.value.reduce((total, group) => total + group.items.length, 0)
-)
-const totalFilteredResults = computed(() =>
-  groups.value.reduce((total, group) => total + group.filteredItems.length, 0)
-)
-const filteredGroups = computed(() => groups.value.filter((group) => group.filteredItems.length))
-const searchModeLabel = computed(
-  () => SEARCH_MODES.find((mode) => mode.value === searchMode.value)?.label || 'App'
-)
+
+function readDisplayMode(): 'list' | 'grid' {
+  return uni.getStorageSync(DISPLAY_MODE_STORAGE_KEY) === 'list' ? 'list' : 'grid'
+}
+
+onShow(() => {
+  displayMode.value = readDisplayMode()
+})
 
 onLoad((options) => {
   query.value = decodeURIComponent(String(options?.q || ''))
   inputValue.value = query.value
-  const requestedMode = String(options?.mode || '')
-  if (SEARCH_MODES.some((mode) => mode.value === requestedMode)) {
-    searchMode.value = requestedMode as SearchMode
-  }
   if (query.value) {
-    runSearch()
+    void runSearch()
   }
 })
+
+async function requestSearchPage(value: string, nextPage: number) {
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    await ensureUserSession()
+    try {
+      return await searchBooks(value, nextPage, SEARCH_PAGE_SIZE)
+    } catch (error) {
+      if (attempt === 0 && error instanceof ApiRequestError && error.statusCode === 401) {
+        continue
+      }
+      throw error
+    }
+  }
+  throw new Error('搜索失败，请稍后重试')
+}
 
 async function runSearch(value = query.value) {
   const next = value.trim()
@@ -62,42 +71,23 @@ async function runSearch(value = query.value) {
   query.value = next
   loading.value = true
   errorMessage.value = ''
-  filteredSheetVisible.value = false
+  page.value = 1
+  hasMore.value = false
 
   try {
-    for (let attempt = 0; attempt < 2; attempt += 1) {
-      await ensureUserSession()
-      try {
-        groups.value = await searchBooks(next, searchMode.value)
-        break
-      } catch (error) {
-        if (attempt === 0 && error instanceof ApiRequestError && error.statusCode === 401) {
-          continue
-        }
-        throw error
-      }
-    }
+    const result = await requestSearchPage(next, 1)
+    books.value = result.items
+    hasMore.value = result.hasMore
     addSearchHistory(next)
-    if (!uni.getStorageSync(SEARCH_GUIDE_STORAGE_KEY)) {
-      searchGuideVisible.value = true
-    }
     trackAnalyticsEvent('search', {
       page: 'search',
-      value: totalResults.value,
+      value: books.value.length,
       metadata: {
         query: next,
-        searchMode: searchMode.value,
-        resultCount: totalResults.value,
-        freeResultCount: totalResults.value,
-        filteredResultCount: totalFilteredResults.value,
-        hasFreeFullBook: totalResults.value > 0,
-        sourceResults: groups.value.map((group) => ({
-          source: group.source,
-          label: group.label,
-          freeResultCount: group.items.length,
-          filteredResultCount: group.filteredItems.length,
-          error: group.error
-        }))
+        resultCount: books.value.length,
+        freeResultCount: books.value.length,
+        hasFreeFullBook: books.value.length > 0,
+        sources: [...new Set(books.value.map((book) => book.source))]
       }
     })
   } catch (error) {
@@ -107,20 +97,44 @@ async function runSearch(value = query.value) {
   }
 }
 
-function dismissSearchGuide() {
-  searchGuideVisible.value = false
-  uni.setStorageSync(SEARCH_GUIDE_STORAGE_KEY, true)
-}
-
-function selectSearchMode(mode: SearchMode) {
-  modeSheetVisible.value = false
-  if (searchMode.value === mode) {
+async function loadMore() {
+  if (!query.value || loading.value || loadingMore.value || !hasMore.value) {
     return
   }
-  searchMode.value = mode
-  if (query.value) {
-    void runSearch(inputValue.value)
+  loadingMore.value = true
+  try {
+    const result = await requestSearchPage(query.value, page.value + 1)
+    const existingIds = new Set(books.value.map((book) => book.id))
+    const newBooks = result.items.filter((book) => !existingIds.has(book.id))
+    books.value.push(...newBooks)
+    page.value = result.page
+    hasMore.value = result.hasMore && newBooks.length > 0
+  } catch (error) {
+    uni.showToast({
+      title: error instanceof Error ? error.message : '加载失败，请稍后重试',
+      icon: 'none'
+    })
+  } finally {
+    loadingMore.value = false
   }
+}
+
+onReachBottom(loadMore)
+
+onPageScroll(({ scrollTop }) => {
+  showBackToTop.value = scrollTop > 400
+})
+
+function toggleDisplayMode() {
+  displayMode.value = displayMode.value === 'list' ? 'grid' : 'list'
+  uni.setStorageSync(DISPLAY_MODE_STORAGE_KEY, displayMode.value)
+}
+
+function scrollToTop() {
+  uni.pageScrollTo({
+    scrollTop: 0,
+    duration: 260
+  })
 }
 
 function openCatalog(book: Book) {
@@ -135,12 +149,15 @@ function openCatalog(book: Book) {
   )
 }
 
-function openReader(book: Book) {
+function openBook(book: Book) {
+  if (book.catalogUrl) {
+    openCatalog(book)
+    return
+  }
   const hasDirectChapter =
     book.readUrl && book.readUrl !== book.catalogUrl && !/\/chapter\/\d+\/0\/?$/.test(book.readUrl)
 
   if (!hasDirectChapter) {
-    openCatalog(book)
     return
   }
 
@@ -159,10 +176,6 @@ function openReader(book: Book) {
 <template>
   <view class="page search-page" :class="themeClass">
     <view class="search-bar card">
-      <button class="mode-trigger" @tap="modeSheetVisible = true">
-        <text>{{ searchModeLabel }}</text>
-        <view class="mode-chevron" />
-      </button>
       <input
         v-model="inputValue"
         class="search-input"
@@ -172,132 +185,66 @@ function openReader(book: Book) {
         @confirm="runSearch(inputValue)"
       />
       <button class="search-button" @tap="runSearch(inputValue)">搜索</button>
+      <button
+        class="display-mode-button"
+        :aria-label="displayMode === 'list' ? '切换为双列显示' : '切换为列表显示'"
+        @tap="toggleDisplayMode"
+      >
+        <view class="display-mode-icon" :class="`display-mode-icon--${displayMode}`">
+          <view v-for="index in 4" :key="index" class="display-mode-part" />
+        </view>
+      </button>
     </view>
 
-    <view v-if="searchGuideVisible" class="search-guide">
-      <view class="search-guide-copy">
-        <view class="search-guide-title">没找到合适的？</view>
-        <view class="search-guide-text">可切换左侧来源，或查看已过滤书籍。</view>
-      </view>
-      <button class="search-guide-close" @tap="dismissSearchGuide">知道了</button>
-    </view>
-
-    <view class="result-head">
-      <view>
-        <view class="result-title">“{{ query }}”</view>
-        <view class="result-meta">名称完全匹配的作品优先显示</view>
-      </view>
-      <view class="result-summary">
-        <text class="result-count">{{ totalResults }} 本</text>
-        <button
-          v-if="totalFilteredResults"
-          class="filtered-entry"
-          @tap="filteredSheetVisible = true"
-        >
-          查看已过滤 {{ totalFilteredResults }} 本
-        </button>
-      </view>
-    </view>
-
-    <view v-if="loading" class="loading-state">
-      <view class="loading-list">
-        <view v-for="index in 3" :key="index" class="skeleton card" />
-      </view>
+    <view v-if="loading" class="loading-list" :class="{ 'loading-list--grid': displayMode === 'grid' }">
+      <view v-for="index in 3" :key="index" class="skeleton card" />
     </view>
 
     <view v-else-if="errorMessage" class="empty">{{ errorMessage }}</view>
-    <view v-else-if="!groups.length" class="empty">没有找到相关作品</view>
+    <view v-else-if="!books.length" class="empty">没有找到相关作品</view>
 
-    <view v-else class="group-list">
-      <view v-for="group in groups" :key="group.source" class="source-group">
-        <view class="group-head">
-          <text class="group-name">{{ group.label }}</text>
-          <text class="group-count">{{ group.items.length }}</text>
-        </view>
-
-        <view v-if="group.error" class="group-error card">{{ group.error }}</view>
-        <view v-else-if="!group.items.length" class="group-empty card">没有找到相关作品</view>
-
-        <view v-else class="book-list">
-          <BookResultCard
-            v-for="book in group.items"
-            :key="book.id"
-            :book="book"
-            @catalog="openCatalog"
-            @reader="openReader"
-          />
-        </view>
+    <view v-else-if="displayMode === 'grid'" class="book-masonry">
+      <view
+        v-for="(column, columnIndex) in bookColumns"
+        :key="columnIndex"
+        class="book-masonry-column"
+      >
+        <BookResultCard
+          v-for="book in column"
+          :key="book.id"
+          :book="book"
+          variant="grid"
+          @open="openBook"
+        />
       </view>
     </view>
 
-    <BottomSheet
-      v-if="modeSheetVisible"
-      :show-handle="false"
-      :z-index="120"
-      @close="modeSheetVisible = false"
-    >
-      <view class="mode-sheet-heading">
-        <button
-          class="mode-sheet-back"
-          aria-label="关闭搜索来源选择"
-          @tap="modeSheetVisible = false"
-        >
-          <view class="mode-sheet-back-icon" />
-        </button>
-        <text class="mode-sheet-title">搜索来源</text>
-        <view class="mode-sheet-spacer" />
-      </view>
-      <view class="mode-sheet-options">
-        <button
-          v-for="option in SEARCH_MODES"
-          :key="option.value"
-          class="mode-sheet-option"
-          :class="{ selected: searchMode === option.value }"
-          @tap="selectSearchMode(option.value)"
-        >
-          {{ option.label }}
-        </button>
-      </view>
-    </BottomSheet>
+    <view v-else class="book-list">
+      <BookResultCard
+        v-for="book in books"
+        :key="book.id"
+        :book="book"
+        variant="list"
+        @open="openBook"
+      />
+    </view>
 
-    <BottomSheet
-      v-if="filteredSheetVisible"
-      :show-handle="false"
-      :z-index="121"
-      @close="filteredSheetVisible = false"
+    <view
+      v-if="!loading && !errorMessage && books.length"
+      class="end-of-list"
+      @tap="loadMore"
     >
-      <view class="mode-sheet-heading">
-        <button
-          class="mode-sheet-back"
-          aria-label="关闭已过滤书籍"
-          @tap="filteredSheetVisible = false"
-        >
-          <view class="mode-sheet-back-icon" />
-        </button>
-        <text class="mode-sheet-title">已过滤书籍</text>
-        <view class="mode-sheet-spacer" />
-      </view>
-      <view class="filtered-sheet-summary">
-        共 {{ totalFilteredResults }} 本，仅展示结果，不提供付费正文。
-      </view>
-      <scroll-view class="filtered-sheet-scroll" scroll-y>
-        <view v-for="group in filteredGroups" :key="group.source" class="filtered-group">
-          <view class="filtered-group-head">
-            <text>{{ group.label }}</text>
-            <text>{{ group.filteredItems.length }}</text>
-          </view>
-          <view class="filtered-book-list">
-            <view v-for="book in group.filteredItems" :key="book.id" class="filtered-book card">
-              <view class="filtered-book-title">{{ book.title }}</view>
-              <view v-if="book.author" class="filtered-book-author">{{ book.author }}</view>
-              <view class="filtered-book-reason">
-                {{ book.unavailableReason || '需要会员或付费阅读' }}
-              </view>
-            </view>
-          </view>
-        </view>
-      </scroll-view>
-    </BottomSheet>
+      {{ loadingMore ? '正在加载更多…' : hasMore ? '上拉加载更多' : '没有更多了' }}
+    </view>
+
+    <button
+      v-if="showBackToTop"
+      class="back-to-top"
+      aria-label="回到顶部"
+      @tap="scrollToTop"
+    >
+      <view class="back-to-top-icon" />
+    </button>
 
     <GlobalAudiobookPlayer />
   </view>
@@ -305,53 +252,33 @@ function openReader(book: Book) {
 
 <style scoped>
 .search-page {
-  padding-top: 24rpx;
+  padding: 0 0 calc(48rpx + env(safe-area-inset-bottom));
 }
 
 .search-bar {
+  position: sticky;
+  top: 0;
+  z-index: 20;
   display: flex;
+  width: 100%;
+  margin: 0;
   align-items: center;
-  padding: 10rpx;
-}
-
-.mode-trigger {
-  display: flex;
-  width: 116rpx;
-  height: 76rpx;
-  margin: 0 12rpx 0 0;
-  padding: 0 14rpx;
-  align-items: center;
-  justify-content: space-between;
-  flex: 0 0 116rpx;
-  color: var(--ink);
-  background: var(--input-bg);
-  border-radius: 16rpx;
-  font-size: 28rpx;
-  line-height: 76rpx;
-}
-
-.mode-chevron,
-.mode-sheet-back-icon {
-  width: 12rpx;
-  height: 12rpx;
-  border-right: 2rpx solid currentColor;
-  border-bottom: 2rpx solid currentColor;
-}
-
-.mode-chevron {
-  transform: translateY(-3rpx) rotate(45deg);
-}
-
-.mode-sheet-back-icon {
-  transform: rotate(135deg);
+  padding: 10rpx 28rpx;
+  background: var(--card-bg, var(--surface));
+  border-width: 0 0 1rpx;
+  border-radius: 0;
+  box-shadow: 0 12rpx 28rpx rgba(0, 0, 0, 0.18);
 }
 
 .search-input {
   flex: 1;
   min-width: 0;
-  height: 76rpx;
-  padding: 0 20rpx;
+  height: 72rpx;
+  padding: 0 22rpx;
   color: var(--ink);
+  background: var(--input-bg);
+  border: 1rpx solid var(--line);
+  border-radius: 16rpx;
   font-size: 30rpx;
 }
 
@@ -360,152 +287,137 @@ function openReader(book: Book) {
 }
 
 .search-button {
-  width: 130rpx;
-  height: 76rpx;
-  margin: 0;
-  color: var(--button-ink);
-  background: var(--gold);
-  border-radius: 16rpx;
+  width: 104rpx;
+  height: 72rpx;
+  margin: 0 0 0 6rpx;
+  padding: 0;
+  color: var(--gold);
+  background: transparent;
+  border-radius: 0;
   font-size: 30rpx;
   font-weight: 700;
-  line-height: 76rpx;
+  line-height: 72rpx;
 }
 
-.search-guide {
+.display-mode-button {
   display: flex;
-  margin-top: 22rpx;
-  padding: 20rpx 22rpx;
-  align-items: center;
-  gap: 20rpx;
-  background: var(--accent-soft);
-  border: 1rpx solid rgba(245, 200, 76, 0.28);
-  border-radius: 18rpx;
-}
-
-.search-guide-copy {
-  min-width: 0;
-  flex: 1;
-}
-
-.search-guide-title {
-  font-size: 28rpx;
-  font-weight: 700;
-}
-
-.search-guide-text {
-  margin-top: 6rpx;
-  color: var(--muted);
-  font-size: 25rpx;
-  line-height: 1.5;
-}
-
-.search-guide-close {
-  height: 54rpx;
-  margin: 0;
-  padding: 0 18rpx;
-  flex: 0 0 auto;
-  color: var(--button-ink);
-  background: var(--gold);
-  border-radius: 999rpx;
-  font-size: 25rpx;
-  font-weight: 700;
-  line-height: 54rpx;
-}
-
-.result-head {
-  display: flex;
-  align-items: flex-end;
-  justify-content: space-between;
-  margin: 42rpx 4rpx 24rpx;
-}
-
-.result-title {
-  font-size: 40rpx;
-  font-weight: 800;
-}
-
-.result-meta {
-  margin-top: 8rpx;
-  color: var(--muted);
-  font-size: 28rpx;
-}
-
-.result-count {
-  color: var(--gold);
-  font-size: 28rpx;
-}
-
-.result-summary {
-  display: flex;
-  align-items: flex-end;
-  flex-direction: column;
-  gap: 8rpx;
-}
-
-.filtered-entry {
-  height: auto;
-  margin: 0;
+  width: 72rpx;
+  height: 72rpx;
+  margin: 0 0 0 8rpx;
   padding: 0;
-  color: var(--muted);
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 72rpx;
+  color: var(--ink);
   background: transparent;
-  font-size: 24rpx;
-  line-height: 1.4;
+  border-radius: 14rpx;
+  line-height: 72rpx;
 }
 
-.group-list,
+.display-mode-icon {
+  display: grid;
+  width: 34rpx;
+  height: 34rpx;
+  gap: 5rpx;
+}
+
+.display-mode-icon--list {
+  grid-template-columns: 1fr;
+}
+
+.display-mode-icon--grid {
+  grid-template-columns: repeat(2, 1fr);
+}
+
+.display-mode-part {
+  background: currentColor;
+  border-radius: 2rpx;
+}
+
+.display-mode-icon--list .display-mode-part:nth-child(4) {
+  display: none;
+}
+
+.display-mode-icon--list .display-mode-part {
+  height: 5rpx;
+}
+
 .book-list,
 .loading-list {
   display: flex;
   flex-direction: column;
   gap: 20rpx;
+  padding: 0 28rpx;
 }
 
-.loading-state {
+.loading-list--grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 18rpx;
+}
+
+.book-masonry {
   display: flex;
+  align-items: flex-start;
+  gap: 18rpx;
+  margin-top: 22rpx;
+  padding: 0 28rpx;
+}
+
+.book-masonry-column {
+  display: flex;
+  min-width: 0;
+  flex: 1;
   flex-direction: column;
-  gap: 22rpx;
+  gap: 18rpx;
 }
 
-.source-group {
-  display: flex;
-  flex-direction: column;
-  gap: 16rpx;
+.loading-list--grid .skeleton {
+  height: 480rpx;
 }
 
-.group-head {
+.loading-list {
+  margin-top: 22rpx;
+}
+
+.book-list {
+  margin-top: 22rpx;
+}
+
+.end-of-list {
+  padding: 34rpx 0 18rpx;
+  color: var(--muted);
+  text-align: center;
+  font-size: 24rpx;
+}
+
+.back-to-top {
+  position: fixed;
+  right: 28rpx;
+  bottom: calc(42rpx + env(safe-area-inset-bottom));
+  z-index: 30;
   display: flex;
+  width: 80rpx;
+  height: 80rpx;
+  margin: 0;
+  padding: 0;
   align-items: center;
-  justify-content: space-between;
-  margin: 18rpx 4rpx 2rpx;
-}
-
-.group-name {
-  font-size: 31rpx;
-  font-weight: 800;
-}
-
-.group-count {
-  min-width: 42rpx;
-  padding: 4rpx 12rpx;
-  color: var(--muted);
+  justify-content: center;
+  color: var(--ink);
+  background: var(--surface-strong);
   border: 1rpx solid var(--line);
-  border-radius: 999rpx;
-  text-align: center;
-  font-size: 28rpx;
+  border-radius: 50%;
+  box-shadow: 0 10rpx 30rpx rgba(0, 0, 0, 0.28);
+  line-height: 80rpx;
 }
 
-.group-error {
-  padding: 24rpx;
-  color: var(--danger);
-  font-size: 28rpx;
-  line-height: 1.6;
-}
-
-.group-empty {
-  padding: 24rpx;
-  color: var(--muted);
-  text-align: center;
-  font-size: 28rpx;
+.back-to-top-icon {
+  width: 18rpx;
+  height: 18rpx;
+  margin-top: 8rpx;
+  border-top: 4rpx solid currentColor;
+  border-left: 4rpx solid currentColor;
+  transform: rotate(45deg);
 }
 
 .skeleton {
@@ -517,117 +429,5 @@ function openReader(book: Book) {
     var(--skeleton-a) 56%
   );
   background-size: 200% 100%;
-}
-
-.mode-sheet-heading {
-  display: grid;
-  grid-template-columns: 72rpx 1fr 72rpx;
-  min-height: 96rpx;
-  align-items: center;
-}
-
-.mode-sheet-back {
-  display: flex;
-  width: 64rpx;
-  height: 64rpx;
-  margin: 0;
-  padding: 0;
-  align-items: center;
-  justify-content: center;
-  color: var(--reader-ink);
-  background: transparent;
-  line-height: 64rpx;
-}
-
-.mode-sheet-title {
-  color: var(--reader-ink);
-  text-align: center;
-  font-size: 34rpx;
-  font-weight: 800;
-}
-
-.mode-sheet-spacer {
-  width: 64rpx;
-}
-
-.mode-sheet-options {
-  display: flex;
-  padding: 20rpx 0 10rpx;
-  flex-direction: column;
-  gap: 14rpx;
-}
-
-.mode-sheet-option {
-  width: 100%;
-  height: 92rpx;
-  margin: 0;
-  padding: 0 26rpx;
-  color: var(--reader-ink);
-  background: var(--surface-strong);
-  border: 1rpx solid transparent;
-  border-radius: 18rpx;
-  font-size: 31rpx;
-  line-height: 92rpx;
-  text-align: left;
-}
-
-.mode-sheet-option.selected {
-  color: var(--accent);
-  background: var(--accent-soft);
-  border-color: var(--accent);
-  font-weight: 700;
-}
-
-.filtered-sheet-summary {
-  padding: 4rpx 0 18rpx;
-  color: var(--muted);
-  font-size: 25rpx;
-}
-
-.filtered-sheet-scroll {
-  max-height: 62vh;
-}
-
-.filtered-group + .filtered-group {
-  margin-top: 26rpx;
-}
-
-.filtered-group-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin-bottom: 12rpx;
-  color: var(--muted);
-  font-size: 26rpx;
-  font-weight: 600;
-}
-
-.filtered-book-list {
-  display: flex;
-  flex-direction: column;
-  gap: 12rpx;
-}
-
-.filtered-book {
-  padding: 20rpx;
-  color: var(--reader-ink);
-  background: var(--surface-strong);
-}
-
-.filtered-book-title {
-  font-size: 29rpx;
-  font-weight: 700;
-}
-
-.filtered-book-author {
-  margin-top: 6rpx;
-  color: var(--muted);
-  font-size: 25rpx;
-}
-
-.filtered-book-reason {
-  margin-top: 8rpx;
-  color: var(--danger);
-  font-size: 24rpx;
 }
 </style>

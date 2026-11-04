@@ -4,9 +4,7 @@ import type {
   ApiSearchResponse,
   Book,
   Catalog,
-  ChapterContent,
-  SearchMode,
-  SearchGroup
+  ChapterContent
 } from '@/types/novel'
 import { clearAuthSession, getAuthToken } from '@/services/auth'
 import { CONTENT_UNAVAILABLE_MESSAGE } from '@/constants/messages'
@@ -56,10 +54,19 @@ async function request<T>(
   })
 }
 
-export async function searchBooks(query: string, mode: SearchMode = 'app'): Promise<SearchGroup[]> {
+export async function searchBooks(
+  query: string,
+  page = 1,
+  pageSize = 20
+): Promise<ApiSearchResponse> {
   const value = query.trim()
   if (!value) {
-    return []
+    return {
+      items: [],
+      page,
+      pageSize,
+      hasMore: false
+    }
   }
 
   if (!hasConfiguredApi()) {
@@ -68,35 +75,16 @@ export async function searchBooks(query: string, mode: SearchMode = 'app'): Prom
     const items = demoBooks
       .filter((book) => normalizeTitle(`${book.title}${book.author}`).includes(normalizedQuery))
       .sort((left, right) => relevanceScore(right.title, value) - relevanceScore(left.title, value))
-    return [
-      {
-        source: 'demo',
-        label: '演示站点',
-        count: items.length,
-        error: '',
-        items,
-        filteredItems: []
-      }
-    ]
+    const start = (page - 1) * pageSize
+    return {
+      items: items.slice(start, start + pageSize),
+      page,
+      pageSize,
+      hasMore: start + pageSize < items.length
+    }
   }
 
-  const response = await request<ApiSearchResponse>('/api/search', { q: value, mode })
-  const items = response.items || []
-  const filteredItems = response.filteredItems || []
-  return (response.groups || []).map((group) => {
-    const groupItems = items
-      .filter((item) => item.source === group.source)
-      .sort((left, right) => relevanceScore(right.title, value) - relevanceScore(left.title, value))
-    const groupFilteredItems = filteredItems.filter((item) => item.source === group.source)
-    return {
-      source: group.source,
-      label: group.label,
-      count: groupItems.length,
-      error: group.error || '',
-      items: groupItems,
-      filteredItems: groupFilteredItems
-    }
-  })
+  return request<ApiSearchResponse>('/api/search', { q: value, page, pageSize })
 }
 
 export async function getCatalog(catalogUrl: string): Promise<Catalog> {

@@ -12,9 +12,10 @@ export interface SessionUser {
   accountEnabled: boolean
   accessEnabled: boolean
   accessExpiresAt: string | null
+  accessTrialMinutes: number
   audiobookEnabled: boolean
   audiobookExpiresAt: string | null
-  remark: string
+  audiobookTrialMinutes: number
   createdAt: string
   lastLoginAt: string | null
 }

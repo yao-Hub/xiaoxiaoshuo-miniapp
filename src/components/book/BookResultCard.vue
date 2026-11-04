@@ -2,18 +2,23 @@
 import { ref } from 'vue'
 import type { Book } from '@/types/novel'
 
-const props = defineProps<{ book: Book }>()
+const props = withDefaults(
+  defineProps<{
+    book: Book
+    variant?: 'list' | 'grid'
+  }>(),
+  { variant: 'list' }
+)
 const emit = defineEmits<{
-  catalog: [book: Book]
-  reader: [book: Book]
+  open: [book: Book]
 }>()
 
 const coverFailed = ref(false)
 </script>
 
 <template>
-  <view class="book-card card">
-    <view class="book-main" @tap="emit('catalog', props.book)">
+  <view class="book-card card" :class="`book-card--${props.variant}`">
+    <view class="book-main" @tap="emit('open', props.book)">
       <view class="book-row">
         <image
           v-if="props.book.coverUrl && !coverFailed"
@@ -34,7 +39,6 @@ const coverFailed = ref(false)
           <view class="book-title">{{ props.book.title }}</view>
           <view class="book-meta">{{ props.book.author || '作者未知' }}</view>
           <view v-if="props.book.intro" class="book-intro">{{ props.book.intro }}</view>
-          <button class="read-button" @tap.stop="emit('reader', props.book)">开始阅读</button>
         </view>
       </view>
     </view>
@@ -44,6 +48,11 @@ const coverFailed = ref(false)
 <style scoped>
 .book-card {
   padding: 22rpx;
+}
+
+.book-card--grid {
+  padding: 0;
+  overflow: hidden;
 }
 
 .book-main {
@@ -140,20 +149,43 @@ const coverFailed = ref(false)
   overflow: hidden;
   color: var(--muted);
   font-size: 28rpx;
+  text-overflow: ellipsis;
   -webkit-box-orient: vertical;
   -webkit-line-clamp: 2;
 }
 
-.read-button {
-  width: 164rpx;
-  height: 58rpx;
-  margin: 16rpx 0 0;
-  padding: 0;
-  color: var(--ink);
-  background: var(--surface-strong);
-  border: 1rpx solid var(--line);
-  border-radius: 14rpx;
-  font-size: 28rpx;
-  line-height: 58rpx;
+.book-card--grid .book-row {
+  flex-direction: column;
+  gap: 0;
 }
+
+.book-card--grid .book-cover {
+  width: 100%;
+  height: 320rpx;
+  flex-basis: auto;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+}
+
+.book-card--grid .book-details {
+  padding: 18rpx;
+}
+
+.book-card--grid .book-title {
+  font-size: 28rpx;
+  line-height: 1.45;
+}
+
+.book-card--grid .book-meta {
+  margin-top: 7rpx;
+  font-size: 25rpx;
+}
+
+.book-card--grid .book-intro {
+  margin-top: 10rpx;
+  font-size: 24rpx;
+  line-height: 1.45;
+}
+
 </style>

@@ -12,8 +12,6 @@ export interface Book {
   unavailableReason?: string
 }
 
-export type SearchMode = 'app' | 'web'
-
 export interface Chapter {
   id: number
   title: string
@@ -52,27 +50,12 @@ export interface ReadingHistoryItem {
   updatedAt: number
 }
 
-export interface SearchGroup {
-  source: string
-  label: string
-  count: number
-  error: string
-  items: Book[]
-  filteredItems: Book[]
-}
-
-export interface ApiSearchGroup {
-  source: string
-  label: string
-  count: number
-  filteredCount?: number
-  error: string
-}
-
 export interface ApiSearchResponse {
   items: Book[]
   filteredItems?: Book[]
-  groups: ApiSearchGroup[]
+  page: number
+  pageSize: number
+  hasMore: boolean
 }
 
 export interface ApiCatalogResponse {

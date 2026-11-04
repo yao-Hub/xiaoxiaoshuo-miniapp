@@ -7,9 +7,36 @@ import { syncUserDataFromServer } from '@/services/user-data-sync'
 
 let appSessionStartedAt = 0
 
+function setupMiniProgramUpdate() {
+  // #ifdef MP-WEIXIN
+  const updateManager = uni.getUpdateManager()
+  updateManager.onUpdateReady(() => {
+    uni.showModal({
+      title: '发现新版本',
+      content: '新版本已准备好，是否立即重启更新？',
+      confirmText: '立即更新',
+      cancelText: '稍后',
+      success(result) {
+        if (result.confirm) {
+          updateManager.applyUpdate()
+        }
+      }
+    })
+  })
+  updateManager.onUpdateFailed(() => {
+    uni.showToast({
+      title: '新版本下载失败，请重新打开小程序',
+      icon: 'none',
+      duration: 3000
+    })
+  })
+  // #endif
+}
+
 export default {
   onLaunch() {
     initializeTheme()
+    setupMiniProgramUpdate()
     getAnalyticsSessionId()
     appSessionStartedAt = Date.now()
   },

@@ -34,7 +34,19 @@ const audiobookAccessText = computed(() => {
   if (!user.value?.audiobookEnabled) {
     return '未开通'
   }
+  if (user.value.audiobookTrialMinutes > 0) {
+    return '待首次收听'
+  }
   return hasAudiobookAccess(user.value) ? '正常' : '已到期'
+})
+const readAccessText = computed(() => {
+  if (!user.value?.accessEnabled) {
+    return '未开通'
+  }
+  if (user.value.accessTrialMinutes > 0) {
+    return '待首次阅读'
+  }
+  return hasActiveAccess(user.value) ? '正常' : '已到期'
 })
 const usernameText = computed(() => {
   if (user.value?.displayName) {
@@ -72,7 +84,10 @@ onShow(async () => {
   }
 })
 
-function formatTime(value: string | null) {
+function formatTime(value: string | null, trialMinutes: number) {
+  if (trialMinutes > 0) {
+    return '首次使用后开始计时'
+  }
   if (!value) {
     return '长期有效'
   }
@@ -228,11 +243,11 @@ async function saveNickname() {
     <view v-if="loggedIn" class="detail-card card">
       <view class="detail-row">
         <text>阅读权限</text>
-        <text>{{ hasActiveAccess(user) ? '正常' : '暂不可用' }}</text>
+        <text>{{ readAccessText }}</text>
       </view>
       <view class="detail-row">
         <text>阅读到期时间</text>
-        <text>{{ formatTime(user?.accessExpiresAt || null) }}</text>
+        <text>{{ formatTime(user?.accessExpiresAt || null, user?.accessTrialMinutes || 0) }}</text>
       </view>
       <view class="detail-row">
         <text>听书权限</text>
@@ -240,7 +255,9 @@ async function saveNickname() {
       </view>
       <view class="detail-row">
         <text>听书到期时间</text>
-        <text>{{ formatTime(user?.audiobookExpiresAt || null) }}</text>
+        <text>
+          {{ formatTime(user?.audiobookExpiresAt || null, user?.audiobookTrialMinutes || 0) }}
+        </text>
       </view>
     </view>
 
