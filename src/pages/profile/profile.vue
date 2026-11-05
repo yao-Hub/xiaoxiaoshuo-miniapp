@@ -271,7 +271,7 @@ async function saveNickname() {
 <style scoped>
 .profile-page {
   padding-top: 22rpx;
-  padding-bottom: calc(150rpx + env(safe-area-inset-bottom));
+  padding-bottom: 150rpx;
 }
 
 .profile-toolbar {

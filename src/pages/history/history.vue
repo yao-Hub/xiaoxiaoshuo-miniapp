@@ -294,7 +294,7 @@ function formatTime(timestamp: number) {
 <style scoped>
 .history-page {
   padding-top: 28rpx;
-  padding-bottom: calc(150rpx + env(safe-area-inset-bottom));
+  padding-bottom: 150rpx;
 }
 
 .history-header {

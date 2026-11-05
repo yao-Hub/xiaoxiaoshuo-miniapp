@@ -57,14 +57,11 @@ const emit = defineEmits<{
 
 <style scoped>
 .listen-bar {
-  position: fixed;
-  bottom: calc(28rpx + env(safe-area-inset-bottom));
-  left: 50%;
-  z-index: 25;
   display: flex;
-  min-width: 280rpx;
-  height: 88rpx;
-  padding: 8rpx;
+  min-width: 240rpx;
+  height: 50rpx;
+  padding: 0 4rpx;
+  box-sizing: border-box;
   align-items: center;
   justify-content: center;
   overflow: hidden;
@@ -75,22 +72,21 @@ const emit = defineEmits<{
   box-shadow:
     0 14rpx 40rpx var(--shadow),
     inset 0 1rpx 0 rgba(255, 255, 255, 0.12);
-  transform: translateX(-50%);
 }
 
 .listen-bar-action {
   display: flex;
-  height: 72rpx;
+  height: 100%;
   margin: 0;
-  padding: 0 22rpx;
+  padding: 0 16rpx;
   align-items: center;
   justify-content: center;
-  gap: 12rpx;
+  gap: 8rpx;
   color: inherit;
   background: transparent;
   border: 0;
   border-radius: 999rpx;
-  font-size: 28rpx;
+  font-size: 24rpx;
   font-weight: 600;
   line-height: 1;
 }
@@ -105,29 +101,29 @@ const emit = defineEmits<{
 
 .listen-bar-icon {
   display: grid;
-  width: 42rpx;
-  height: 42rpx;
-  flex: 0 0 42rpx;
+  width: 32rpx;
+  height: 32rpx;
+  flex: 0 0 32rpx;
   color: var(--accent);
   background: var(--accent-soft);
   border-radius: 50%;
-  font-size: 28rpx;
+  font-size: 22rpx;
   line-height: 1;
   place-items: center;
 }
 
 .locate-icon {
-  font-size: 30rpx;
+  font-size: 24rpx;
 }
 
 .pause-symbol {
   display: flex;
-  gap: 5rpx;
+  gap: 4rpx;
 }
 
 .pause-bar {
-  width: 5rpx;
-  height: 20rpx;
+  width: 4rpx;
+  height: 16rpx;
   background: currentColor;
   border-radius: 999rpx;
 }
@@ -135,14 +131,14 @@ const emit = defineEmits<{
 .play-symbol {
   width: 0;
   height: 0;
-  margin-left: 4rpx;
-  border-top: 10rpx solid transparent;
-  border-bottom: 10rpx solid transparent;
-  border-left: 16rpx solid currentColor;
+  margin-left: 2rpx;
+  border-top: 8rpx solid transparent;
+  border-bottom: 8rpx solid transparent;
+  border-left: 12rpx solid currentColor;
 }
 
 .loading-symbol {
-  font-size: 20rpx;
+  font-size: 18rpx;
   letter-spacing: 1rpx;
 }
 

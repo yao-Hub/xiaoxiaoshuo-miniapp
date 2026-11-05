@@ -252,7 +252,7 @@ function openBook(book: Book) {
 
 <style scoped>
 .search-page {
-  padding: 0 0 calc(48rpx + env(safe-area-inset-bottom));
+  padding: 0 0 48rpx;
 }
 
 .search-bar {

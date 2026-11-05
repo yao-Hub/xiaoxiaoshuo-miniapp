@@ -148,7 +148,7 @@ function deleteRecentSearch(query: string) {
 <style scoped>
 .home-page {
   padding-top: 54rpx;
-  padding-bottom: calc(150rpx + env(safe-area-inset-bottom));
+  padding-bottom: 150rpx;
 }
 
 .hero {

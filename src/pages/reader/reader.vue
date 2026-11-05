@@ -1140,22 +1140,26 @@ async function retryLoad() {
       :hidden="!audiobookEnabled || !toolbarVisible"
     />
 
-    <ReaderImmersiveListenBar
-      v-if="
-        audiobookEnabled &&
-        showReaderControls &&
-        !toolbarVisible &&
-        audiobook.visible.value &&
-        (audiobook.loading.value || showAudiobookPlaybackControls || showAudiobookOriginalProgress)
-      "
-      :show-original-progress="showAudiobookOriginalProgress"
-      :is-on-playback-page="showAudiobookPlaybackControls"
-      :playing="audiobook.playing.value"
-      :loading="audiobook.loading.value"
-      @locate-original="locateAudiobookProgress"
-      @from-current="listenFromCurrentPage"
-      @toggle-play="audiobook.togglePlay"
-    />
+    <view class="reader-listen-footer">
+      <ReaderImmersiveListenBar
+        v-if="
+          audiobookEnabled &&
+          showReaderControls &&
+          !toolbarVisible &&
+          audiobook.visible.value &&
+          (audiobook.loading.value ||
+            showAudiobookPlaybackControls ||
+            showAudiobookOriginalProgress)
+        "
+        :show-original-progress="showAudiobookOriginalProgress"
+        :is-on-playback-page="showAudiobookPlaybackControls"
+        :playing="audiobook.playing.value"
+        :loading="audiobook.loading.value"
+        @locate-original="locateAudiobookProgress"
+        @from-current="listenFromCurrentPage"
+        @toggle-play="audiobook.togglePlay"
+      />
+    </view>
 
     <ReaderCatalogSheet
       v-if="catalogVisible"
@@ -1195,6 +1199,17 @@ async function retryLoad() {
   overflow: hidden;
   color: var(--reader-ink);
   background: radial-gradient(circle at 88% 0%, var(--ambient), transparent 32%), var(--reader-bg);
+}
+
+.reader-listen-footer {
+  display: flex;
+  width: 100%;
+  height: 90rpx;
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+  align-items: center;
+  justify-content: center;
 }
 
 .paged-area {

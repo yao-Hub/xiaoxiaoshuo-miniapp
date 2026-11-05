@@ -90,6 +90,7 @@ page {
   --skeleton-a: #211f1b;
   --skeleton-b: #2b2822;
   min-height: 100%;
+  padding-bottom: env(safe-area-inset-bottom);
   color: var(--ink);
   background: var(--bg);
   font-family:
@@ -138,7 +139,7 @@ button::after {
 
 .page {
   min-height: 100vh;
-  padding: 32rpx 28rpx calc(48rpx + env(safe-area-inset-bottom));
+  padding: 32rpx 28rpx 48rpx;
   color: var(--ink);
   background: radial-gradient(circle at 90% 0%, var(--ambient), transparent 34%), var(--bg);
 }
