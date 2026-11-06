@@ -84,7 +84,7 @@ const renderedLines = computed(() =>
 }
 
 .reader-chapter-content--scroll {
-  padding: 12rpx 40rpx calc(24rpx + env(safe-area-inset-bottom));
+  padding: 12rpx 40rpx 24rpx;
 }
 
 .book-name {

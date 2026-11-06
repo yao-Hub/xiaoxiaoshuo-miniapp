@@ -1,9 +1,19 @@
 import { computed, nextTick, onScopeDispose, ref, toValue, type MaybeRefOrGetter } from 'vue'
 import { loadChapterWithCache } from '@/services/chapter-cache'
 import type { ChapterContent } from '@/types/novel'
-import type { ReaderChapterBlock, ReaderPageData, ReaderSettings } from '@/types/reader'
+import type {
+  ReaderChapterBlock,
+  ReaderPageData,
+  ReaderPageLine,
+  ReaderSettings
+} from '@/types/reader'
 import { buildReaderPages, estimateTextLines, splitChapterParagraphs } from '@/utils/pagination'
 import { findReaderPositionForOffset } from '@/utils/reader-position'
+import {
+  mergeAdjacentScrollBlocks,
+  resolveScrollBlockIndex,
+  type ReaderScrollBlockMetric
+} from '@/utils/reader-scroll'
 
 const READER_LINE_HEIGHT = 1.95
 const READER_TITLE_LINE_HEIGHT = 1.4
@@ -49,6 +59,13 @@ interface ReaderSwiperPage {
   pageIndex: number
 }
 
+interface ReaderScrollBlock {
+  key: string
+  chapterTitle: string
+  lines: ReaderPageLine[]
+  showHeading: boolean
+}
+
 const EMPTY_WINDOW: ReaderWindowState = {
   blocks: [],
   activeBlockIndex: 0,
@@ -65,15 +82,19 @@ export function useReaderEngine(options: ReaderEngineOptions) {
   const scrollReaderTop = ref(0)
   const scrollRestoreTop = ref(0)
   const scrollProgress = ref(0)
+  const scrollAnchorLocked = ref(false)
   let activeRequestId = 0
   let preloadGeneration = 0
   let pendingWindowRefresh = false
   let unlockTimer: ReturnType<typeof setTimeout> | undefined
+  let scrollAnchorTimer: ReturnType<typeof setTimeout> | undefined
 
   const fontSizePx = computed(() => uni.upx2px(options.settings.fontSize * 2))
   const letterSpacingPx = computed(() => uni.upx2px(1))
   const paragraphGapPx = computed(() => uni.upx2px(30))
   const lineHeightPx = computed(() => fontSizePx.value * READER_LINE_HEIGHT)
+  const scrollChapterPaddingTopPx = uni.upx2px(12)
+  const scrollChapterPaddingBottomPx = uni.upx2px(24)
   const blocks = computed(() => windowState.value.blocks)
   const activeBlock = computed(() => blocks.value[windowState.value.activeBlockIndex])
   const chapter = computed(() => activeBlock.value?.chapter)
@@ -109,20 +130,37 @@ export function useReaderEngine(options: ReaderEngineOptions) {
   const nextChapterUrl = computed(() =>
     chapter.value ? options.getAdjacentUrls(chapter.value).nextUrl : ''
   )
+  const scrollBlocks = computed<ReaderScrollBlock[]>(() =>
+    blocks.value.map((block) => ({
+      key: block.key,
+      chapterTitle: block.chapter.title,
+      lines: block.pages.flatMap((page) => page.lines),
+      showHeading: Boolean(block.pages[0]?.showHeading)
+    }))
+  )
   const scrollLines = computed(() => readerPages.value.flatMap((page) => page.lines))
   const scrollShowHeading = computed(() => Boolean(readerPages.value[0]?.showHeading))
   const headingHeightPx = computed(() =>
     chapter.value ? headingHeightFor(chapter.value.title) : 0
   )
-  const estimatedScrollHeight = computed(
-    () =>
-      (scrollShowHeading.value ? headingHeightPx.value : 0) +
-      scrollLines.value.reduce(
-        (height, line) =>
-          height + lineHeightPx.value + (line.paragraphEnd ? paragraphGapPx.value : 0),
-        0
-      )
-  )
+  const scrollBlockMetrics = computed<ReaderScrollBlockMetric[]>(() => {
+    let top = 0
+    return blocks.value.map((block) => {
+      const height = measureScrollBlock(block)
+      const metric = {
+        key: block.key,
+        top,
+        height
+      }
+      top += height
+      return metric
+    })
+  })
+  const estimatedScrollHeight = computed(() => {
+    const metrics = scrollBlockMetrics.value
+    const last = metrics[metrics.length - 1]
+    return last ? last.top + last.height : 0
+  })
 
   function clearUnlockTimer() {
     if (unlockTimer) {
@@ -158,6 +196,41 @@ export function useReaderEngine(options: ReaderEngineOptions) {
       titleLines * titleFontSizePx * READER_TITLE_LINE_HEIGHT +
       uni.upx2px(73)
     )
+  }
+
+  function scrollLinesHeight(lines: ReaderPageLine[]) {
+    return lines.reduce(
+      (height, line) =>
+        height + lineHeightPx.value + (line.paragraphEnd ? paragraphGapPx.value : 0),
+      0
+    )
+  }
+
+  function measureScrollBlock(block: ReaderChapterBlock) {
+    const showHeading = Boolean(block.pages[0]?.showHeading)
+    return (
+      scrollChapterPaddingTopPx +
+      (showHeading ? headingHeightFor(block.chapter.title) : 0) +
+      scrollLinesHeight(block.pages.flatMap((page) => page.lines)) +
+      scrollChapterPaddingBottomPx
+    )
+  }
+
+  function clampScrollTop(value: number) {
+    return Math.min(
+      Math.max(0, value),
+      Math.max(0, estimatedScrollHeight.value - toValue(options.pageViewportHeight))
+    )
+  }
+
+  function releaseScrollAnchorLock() {
+    if (scrollAnchorTimer) {
+      clearTimeout(scrollAnchorTimer)
+    }
+    scrollAnchorTimer = setTimeout(() => {
+      scrollAnchorLocked.value = false
+      scrollAnchorTimer = undefined
+    }, 80)
   }
 
   function buildPagesForChapter(chapterContent: ChapterContent) {
@@ -282,6 +355,40 @@ export function useReaderEngine(options: ReaderEngineOptions) {
       loadAdjacentBlock(adjacentUrls.nextUrl, generation)
     ])
     if (generation !== preloadGeneration || chapter.value?.chapterUrl !== sourceUrl) {
+      return
+    }
+
+    if (options.settings.pageMode === 'scroll') {
+      const merged = mergeAdjacentScrollBlocks(blocks.value, sourceUrl, previous, next)
+      if (merged.activeBlockIndex < 0) {
+        return
+      }
+
+      const nextKeys = merged.blocks.map((block) => block.key).join('|')
+      const currentKeys = blocks.value.map((block) => block.key).join('|')
+      if (nextKeys === currentKeys) {
+        return
+      }
+
+      const prependedHeight = merged.prependedBlocks.reduce(
+        (height, block) => height + measureScrollBlock(block),
+        0
+      )
+      const nextScrollTop = scrollReaderTop.value + prependedHeight
+      if (prependedHeight > 0) {
+        scrollAnchorLocked.value = true
+      }
+      windowState.value = {
+        blocks: merged.blocks,
+        activeBlockIndex: merged.activeBlockIndex,
+        currentPageIndex: currentPageIndex.value
+      }
+      scrollReaderTop.value = nextScrollTop
+      scrollRestoreTop.value = nextScrollTop
+      if (prependedHeight > 0) {
+        await nextTick()
+        releaseScrollAnchorLock()
+      }
       return
     }
 
@@ -437,18 +544,21 @@ export function useReaderEngine(options: ReaderEngineOptions) {
   }
 
   function setScrollPosition(value: number) {
-    const next = Math.min(
-      Math.max(0, value),
-      Math.max(0, estimatedScrollHeight.value - toValue(options.pageViewportHeight))
-    )
+    const next = clampScrollTop(value)
     scrollReaderTop.value = next
     scrollRestoreTop.value = next
     syncPageIndexFromScroll()
   }
 
+  function getActiveScrollTop() {
+    const metric = scrollBlockMetrics.value[windowState.value.activeBlockIndex]
+    return Math.max(0, scrollReaderTop.value - (metric?.top || 0))
+  }
+
   function estimatePageScrollTop(pageIndex: number) {
+    const blockTop = scrollBlockMetrics.value[windowState.value.activeBlockIndex]?.top || 0
     if (pageIndex <= 0) {
-      return 0
+      return blockTop
     }
     let height = 0
     readerPages.value.slice(0, pageIndex).forEach((page) => {
@@ -456,10 +566,7 @@ export function useReaderEngine(options: ReaderEngineOptions) {
         height += lineHeightPx.value + (line.paragraphEnd ? paragraphGapPx.value : 0)
       })
     })
-    return Math.min(
-      height,
-      Math.max(0, estimatedScrollHeight.value - toValue(options.pageViewportHeight))
-    )
+    return clampScrollTop(blockTop + height)
   }
 
   function estimateScrollTopForReaderPosition(paragraphIndex: number, startOffset: number) {
@@ -474,7 +581,11 @@ export function useReaderEngine(options: ReaderEngineOptions) {
       return undefined
     }
 
-    let lineTop = scrollShowHeading.value ? headingHeightPx.value : 0
+    const metric = scrollBlockMetrics.value[windowState.value.activeBlockIndex]
+    let lineTop =
+      (metric?.top || 0) +
+      scrollChapterPaddingTopPx +
+      (scrollShowHeading.value ? headingHeightPx.value : 0)
     for (let index = 0; index < lineIndex; index += 1) {
       const line = lines[index]
       lineTop += lineHeightPx.value + (line.paragraphEnd ? paragraphGapPx.value : 0)
@@ -482,14 +593,15 @@ export function useReaderEngine(options: ReaderEngineOptions) {
 
     const lineCenter = lineTop + lineHeightPx.value / 2
     const target = lineCenter - toValue(options.pageViewportHeight) / 2
-    return Math.min(
-      Math.max(0, target),
-      Math.max(0, estimatedScrollHeight.value - toValue(options.pageViewportHeight))
-    )
+    return clampScrollTop(target)
   }
 
   function getVisibleScrollLine(scrollTop: number) {
-    let lineTop = scrollShowHeading.value ? headingHeightPx.value : 0
+    const metric = scrollBlockMetrics.value[windowState.value.activeBlockIndex]
+    let lineTop =
+      (metric?.top || 0) +
+      scrollChapterPaddingTopPx +
+      (scrollShowHeading.value ? headingHeightPx.value : 0)
     for (const line of scrollLines.value) {
       const lineBottom = lineTop + lineHeightPx.value
       if (lineBottom > scrollTop) {
@@ -501,24 +613,41 @@ export function useReaderEngine(options: ReaderEngineOptions) {
   }
 
   function syncPageIndexFromScroll() {
-    const maximum = Math.max(0, estimatedScrollHeight.value - toValue(options.pageViewportHeight))
-    if (maximum === 0) {
-      scrollProgress.value = 100
-      if (readerPages.value.length) {
-        windowState.value = {
-          ...windowState.value,
-          currentPageIndex: readerPages.value.length - 1
-        }
-      }
+    const metrics = scrollBlockMetrics.value
+    const blockIndex = resolveScrollBlockIndex(metrics, scrollReaderTop.value)
+    const metric = metrics[blockIndex]
+    const block = blocks.value[blockIndex]
+    if (!metric || !block) {
       return
     }
-    const ratio = Math.min(1, scrollReaderTop.value / maximum)
+
+    const localMaximum = Math.max(
+      0,
+      metric.height - toValue(options.pageViewportHeight)
+    )
+    const localTop = Math.max(0, scrollReaderTop.value - metric.top)
+    const ratio = localMaximum === 0 ? 1 : Math.min(1, localTop / localMaximum)
     scrollProgress.value = Math.round(ratio * 100)
-    if (readerPages.value.length) {
-      windowState.value = {
-        ...windowState.value,
-        currentPageIndex: Math.round(ratio * Math.max(0, readerPages.value.length - 1))
-      }
+    const nextPageIndex =
+      block.pages.length <= 1
+        ? 0
+        : Math.round(ratio * Math.max(0, block.pages.length - 1))
+    if (
+      blockIndex === windowState.value.activeBlockIndex &&
+      nextPageIndex === currentPageIndex.value
+    ) {
+      return
+    }
+
+    const chapterChanged = blockIndex !== windowState.value.activeBlockIndex
+    windowState.value = {
+      blocks: blocks.value,
+      activeBlockIndex: blockIndex,
+      currentPageIndex: nextPageIndex
+    }
+    if (chapterChanged) {
+      notifyChapterCommitted()
+      void refreshWindow()
     }
   }
 
@@ -536,9 +665,19 @@ export function useReaderEngine(options: ReaderEngineOptions) {
     preloadGeneration += 1
     loading.value = false
     clearUnlockTimer()
+    if (scrollAnchorTimer) {
+      clearTimeout(scrollAnchorTimer)
+      scrollAnchorTimer = undefined
+    }
+    scrollAnchorLocked.value = false
   }
 
-  onScopeDispose(clearUnlockTimer)
+  onScopeDispose(() => {
+    clearUnlockTimer()
+    if (scrollAnchorTimer) {
+      clearTimeout(scrollAnchorTimer)
+    }
+  })
 
   return {
     windowKey,
@@ -558,8 +697,10 @@ export function useReaderEngine(options: ReaderEngineOptions) {
     fontSizePx,
     scrollReaderTop,
     scrollRestoreTop,
+    scrollBlocks,
     scrollLines,
     scrollShowHeading,
+    scrollAnchorLocked,
     loadDirectChapter,
     refreshWindow,
     commitSwiperIndex,
@@ -568,6 +709,7 @@ export function useReaderEngine(options: ReaderEngineOptions) {
     setPageIndex,
     rebuildPages,
     setScrollPosition,
+    getActiveScrollTop,
     estimatePageScrollTop,
     estimateScrollTopForReaderPosition,
     getVisibleScrollLine,

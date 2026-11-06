@@ -20,20 +20,23 @@ const PLAYBACK_RATE_STORAGE_KEY = 'audiobook_playback_rate'
 const VOICE_STORAGE_KEY = 'audiobook_voice'
 
 let syncPromise: Promise<boolean> | undefined
+let initialSyncAttempted = false
 
-export function syncUserDataFromServer() {
+export function syncUserDataFromServer(options: { showLoading?: boolean } = {}) {
   if (!canSyncUserData()) {
     return Promise.resolve(false)
   }
-  syncPromise ||= runSync().finally(() => {
+  const showLoading = options.showLoading ?? !initialSyncAttempted
+  syncPromise ||= runSync(showLoading).finally(() => {
     syncPromise = undefined
+    initialSyncAttempted = true
   })
   return syncPromise
 }
 
-async function runSync() {
+async function runSync(showLoading: boolean) {
   try {
-    const data = await getUserData()
+    const data = await getUserData({ showLoading })
     const localSearch = getSearchHistory()
     const localReading = getReadingHistory()
 

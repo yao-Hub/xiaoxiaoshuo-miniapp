@@ -100,8 +100,8 @@ const {
   fontSizePx,
   scrollReaderTop,
   scrollRestoreTop,
-  scrollLines,
-  scrollShowHeading,
+  scrollBlocks,
+  scrollAnchorLocked,
   loadDirectChapter,
   refreshWindow,
   commitSwiperIndex,
@@ -110,6 +110,7 @@ const {
   setPageIndex,
   rebuildPages,
   setScrollPosition,
+  getActiveScrollTop,
   estimatePageScrollTop,
   estimateScrollTopForReaderPosition,
   getVisibleScrollLine,
@@ -588,7 +589,7 @@ function handleChapterCommitted(targetChapter: ChapterContent, pageIndex: number
       chapterUrl: targetChapter.chapterUrl,
       catalogUrl: targetChapter.catalogUrl,
       coverUrl: bookCoverUrl.value || routeCoverUrl.value,
-      scrollTop: readerSettings.pageMode === 'scroll' ? scrollReaderTop.value : 0,
+      scrollTop: readerSettings.pageMode === 'scroll' ? getActiveScrollTop() : 0,
       pageIndex,
       progress: 0,
       updatedAt: Date.now()
@@ -604,7 +605,7 @@ function persistReadingProgress() {
   updateReadingProgress({
     chapterUrl: chapter.value.chapterUrl,
     coverUrl: bookCoverUrl.value || routeCoverUrl.value,
-    scrollTop: readerSettings.pageMode === 'scroll' ? scrollReaderTop.value : 0,
+    scrollTop: readerSettings.pageMode === 'scroll' ? getActiveScrollTop() : 0,
     progress: getReadingProgress(),
     pageIndex: currentPageIndex.value,
     updatedAt: Date.now()
@@ -620,6 +621,9 @@ function handleScrollModeScroll(event: ReaderScrollEvent) {
   if (readerSettings.pageMode !== 'scroll') {
     return
   }
+  if (scrollAnchorLocked.value) {
+    return
+  }
   scrollReaderTop.value = Math.max(0, event.detail.scrollTop)
   lastReaderScrollAt = Date.now()
   syncPageIndexFromScroll()
@@ -627,7 +631,8 @@ function handleScrollModeScroll(event: ReaderScrollEvent) {
   if (
     pendingStart &&
     !syncingAudiobookScroll &&
-    Math.abs(scrollReaderTop.value - pendingStart.scrollTop) > 1
+    (chapterUrl.value !== pendingStart.chapterUrl ||
+      Math.abs(getActiveScrollTop() - pendingStart.scrollTop) > 1)
   ) {
     audiobookStartViewChanged = true
   }
@@ -836,7 +841,7 @@ function startAudiobook(start = getCurrentListeningStart()) {
   pendingAudiobookStart.value = {
     chapterUrl: start.chapterUrl,
     pageIndex: start.pageIndex,
-    scrollTop: scrollReaderTop.value
+    scrollTop: getActiveScrollTop()
   }
   audiobookStartViewChanged = false
   audiobookPlaybackPosition.value = undefined
@@ -985,7 +990,7 @@ async function retryLoad() {
   uni.showLoading({ title: '正在重新加载', mask: true })
   const succeeded = await loadDirectChapter(targetUrl, {
     pageIndex: isCurrentChapter ? currentPageIndex.value : 0,
-    scrollTop: isCurrentChapter ? scrollReaderTop.value : 0
+    scrollTop: isCurrentChapter ? getActiveScrollTop() : 0
   })
   uni.hideLoading()
   if (succeeded) {
@@ -1062,13 +1067,15 @@ async function retryLoad() {
         @scroll="handleScrollModeScroll"
       >
         <ReaderChapterContent
+          v-for="block in scrollBlocks"
+          :key="block.key"
           flow="scroll"
           :book-title="bookTitle"
-          :chapter-title="chapter.title"
-          :lines="scrollLines"
-          :show-heading="scrollShowHeading"
+          :chapter-title="block.chapterTitle"
+          :lines="block.lines"
+          :show-heading="block.showHeading"
           :font-size-px="fontSizePx"
-          :highlight-ranges="audiobookHighlightRanges"
+          :highlight-ranges="block.key === chapterUrl ? audiobookHighlightRanges : undefined"
         />
       </scroll-view>
     </view>
@@ -1120,7 +1127,7 @@ async function retryLoad() {
       :theme="resolvedTheme"
       :previous-disabled="interactionLocked || loading || !previousChapterUrl"
       :next-disabled="interactionLocked || loading || !nextChapterUrl"
-      @previous="moveToAdjacentChapter('previous', { enterAtStart: true, instant: true })"
+      @previous="moveToAdjacentChapter('previous', { instant: true })"
       @next="moveToAdjacentChapter('next', { enterAtStart: true, instant: true })"
       @catalog="openCatalog"
       @settings="settingsVisible = true"

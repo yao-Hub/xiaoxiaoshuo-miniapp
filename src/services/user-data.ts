@@ -9,11 +9,11 @@ interface UserDataSnapshot {
   favoriteVoiceIds: string[]
 }
 
-function requestOptions() {
+function requestOptions(showLoading = false) {
   return {
     token: getAuthToken(),
     timeout: 15000,
-    showLoading: false,
+    showLoading,
     forbiddenMessage: '当前内容暂不可用。',
     onUnauthorized: clearAuthSession
   }
@@ -30,8 +30,11 @@ function mutateUserData(path: string, data?: Record<string, unknown>) {
   }).then(() => undefined)
 }
 
-export function getUserData() {
-  return requestJson<UserDataSnapshot>('/api/user/sync-data', requestOptions())
+export function getUserData(options: { showLoading?: boolean } = {}) {
+  return requestJson<UserDataSnapshot>(
+    '/api/user/sync-data',
+    requestOptions(options.showLoading)
+  )
 }
 
 export function saveSearchHistoryToServer(query: string) {

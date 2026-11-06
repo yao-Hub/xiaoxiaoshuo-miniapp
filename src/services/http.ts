@@ -79,7 +79,7 @@ let activeLoadingRequests = 0
 function beginRequestLoading() {
   activeLoadingRequests += 1
   if (activeLoadingRequests === 1) {
-    uni.showLoading({ title: '加载中', mask: true })
+    uni.showLoading({ mask: true })
   }
 }
 

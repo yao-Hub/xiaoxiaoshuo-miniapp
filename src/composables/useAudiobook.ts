@@ -628,6 +628,9 @@ function createAudiobookState() {
 
   function openSettings() {
     settingsVisible.value = true
+    if (!voiceSettings.voices.value.length && !voiceSettings.loading.value) {
+      void voiceSettings.loadVoices()
+    }
   }
 
   function closeSettings() {
