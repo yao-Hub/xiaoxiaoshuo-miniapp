@@ -44,7 +44,7 @@ export default {
     appSessionStartedAt = Date.now()
     void (async () => {
       try {
-        await ensureUserSession()
+        await ensureUserSession({ forceRefresh: true })
       } catch {
         return
       }

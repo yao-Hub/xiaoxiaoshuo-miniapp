@@ -144,8 +144,7 @@ function openCatalog(book: Book) {
     metadata: { source: book.source, action: 'catalog' }
   })
   openProtectedPage(
-    `/pages/catalog/catalog?url=${encodeURIComponent(book.catalogUrl)}&title=${encodeURIComponent(book.title)}&coverUrl=${encodeURIComponent(book.coverUrl)}`,
-    { requireContentAccess: false }
+    `/pages/catalog/catalog?url=${encodeURIComponent(book.catalogUrl)}&title=${encodeURIComponent(book.title)}&coverUrl=${encodeURIComponent(book.coverUrl)}`
   )
 }
 

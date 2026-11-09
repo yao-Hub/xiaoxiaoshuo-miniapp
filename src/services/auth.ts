@@ -3,6 +3,16 @@ import { ApiRequestError, requestJson } from '@/services/http'
 
 const TOKEN_KEY = 'xiaoxiaoshuo.authToken'
 
+export type UserPermissionKey = 'catalog_content' | 'audiobook'
+
+export interface UserPermission {
+  key: UserPermissionKey
+  name: string
+  enabled: boolean
+  expiresAt: string | null
+  trialMinutes: number
+}
+
 export interface SessionUser {
   id: string
   publicId: string
@@ -18,15 +28,22 @@ export interface SessionUser {
   audiobookTrialMinutes: number
   createdAt: string
   lastLoginAt: string | null
+  permissions?: UserPermission[]
 }
 
 interface AuthResponse {
   token: string
   user: SessionUser
+  permissions?: UserPermission[]
 }
 
 interface WechatAuthResponse extends AuthResponse {
   isNewUser: boolean
+}
+
+interface UserProfileResponse {
+  user: SessionUser
+  permissions: UserPermission[]
 }
 
 let wechatLoginPromise: Promise<SessionUser> | undefined
@@ -39,7 +56,10 @@ export function getAuthToken() {
 
 export function setAuthSession(result: AuthResponse) {
   uni.setStorageSync(TOKEN_KEY, result.token)
-  uni.setStorageSync('xiaoxiaoshuo.currentUser', result.user)
+  uni.setStorageSync('xiaoxiaoshuo.currentUser', {
+    ...result.user,
+    ...(result.permissions ? { permissions: result.permissions } : {})
+  })
   validatedToken = result.token
 }
 
@@ -83,9 +103,25 @@ export async function openProtectedPage(
     return
   }
 
-  const user = getCachedUser()
-  if (user && hasActiveAccess(user)) {
-    uni.navigateTo({ url })
+  if (sessionPromise) {
+    try {
+      await sessionPromise
+    } catch (error) {
+      uni.showToast({
+        title: error instanceof Error ? error.message : CONTENT_UNAVAILABLE_MESSAGE,
+        icon: 'none'
+      })
+      return
+    }
+  }
+
+  const cachedUser = getCachedUser()
+  if (cachedUser) {
+    if (hasActiveAccess(cachedUser)) {
+      uni.navigateTo({ url })
+    } else {
+      uni.showToast({ title: CONTENT_UNAVAILABLE_MESSAGE, icon: 'none' })
+    }
     return
   }
 
@@ -146,12 +182,12 @@ function ensureWechatLogin() {
   return wechatLoginPromise
 }
 
-export function ensureUserSession() {
+export function ensureUserSession(options: { forceRefresh?: boolean } = {}) {
   const token = getAuthToken()
   if (!token) {
     return ensureWechatLogin()
   }
-  if (validatedToken === token) {
+  if (validatedToken === token && !options.forceRefresh) {
     return Promise.resolve(getCachedUser()!)
   }
 
@@ -173,14 +209,18 @@ export function ensureUserSession() {
 }
 
 export async function getCurrentUser(options: { showLoading?: boolean } = {}) {
-  const result = await requestJson<{ user: SessionUser }>('/api/auth/me', {
+  const result = await requestJson<UserProfileResponse>('/api/auth/profile', {
     token: getAuthToken(),
     timeout: 20000,
     showLoading: options.showLoading,
     onUnauthorized: clearAuthSession
   })
-  uni.setStorageSync('xiaoxiaoshuo.currentUser', result.user)
-  return result.user
+  const user = {
+    ...result.user,
+    permissions: result.permissions
+  }
+  uni.setStorageSync('xiaoxiaoshuo.currentUser', user)
+  return user
 }
 
 export async function updateProfile(displayName: string, avatarUrl: string | null) {
@@ -192,8 +232,13 @@ export async function updateProfile(displayName: string, avatarUrl: string | nul
     showLoading: false,
     onUnauthorized: clearAuthSession
   })
-  uni.setStorageSync('xiaoxiaoshuo.currentUser', result.user)
-  return result.user
+  const permissions = getCachedUser()?.permissions
+  const user = {
+    ...result.user,
+    ...(permissions ? { permissions } : {})
+  }
+  uni.setStorageSync('xiaoxiaoshuo.currentUser', user)
+  return user
 }
 
 export function logout() {
@@ -202,6 +247,13 @@ export function logout() {
 }
 
 export function hasActiveAccess(user: SessionUser | undefined) {
+  const permission = user?.permissions?.find((item) => item.key === 'catalog_content')
+  if (permission) {
+    return (
+      permission.enabled &&
+      (!permission.expiresAt || Date.parse(permission.expiresAt) > Date.now())
+    )
+  }
   if (!user?.accessEnabled) {
     return false
   }
@@ -209,6 +261,13 @@ export function hasActiveAccess(user: SessionUser | undefined) {
 }
 
 export function hasAudiobookAccess(user: SessionUser | undefined) {
+  const permission = user?.permissions?.find((item) => item.key === 'audiobook')
+  if (permission) {
+    return (
+      permission.enabled &&
+      (!permission.expiresAt || Date.parse(permission.expiresAt) > Date.now())
+    )
+  }
   if (!user?.audiobookEnabled) {
     return false
   }

@@ -18,6 +18,7 @@ interface ApiEnvelope<T> {
 }
 
 interface ApiErrorBody {
+  code?: number
   error?: string
   msg?: string
 }
@@ -72,6 +73,16 @@ interface RequestOptions {
   onUnauthorized?: () => void
   cancellation?: RequestCancellation
   showLoading?: boolean
+}
+
+function isApiEnvelope<T>(value: unknown): value is ApiEnvelope<T> {
+  return Boolean(
+    value &&
+      typeof value === 'object' &&
+      'code' in value &&
+      'msg' in value &&
+      'data' in value
+  )
 }
 
 let activeLoadingRequests = 0
@@ -137,21 +148,28 @@ export function requestJson<T>(path: string, options: RequestOptions = {}) {
       },
       timeout: options.timeout || 30000,
       success(response) {
+        const body = response.data as T | ApiEnvelope<T> | ApiErrorBody | undefined
         if (response.statusCode >= 200 && response.statusCode < 300) {
-          const body = response.data as T | ApiEnvelope<T>
-          resolveOnce(
-            body && typeof body === 'object' && 'code' in body && 'msg' in body && 'data' in body
-              ? (body as ApiEnvelope<T>).data
-              : (body as T)
-          )
+          if (isApiEnvelope<T>(body)) {
+            if (body.code !== 0) {
+              if (body.code === 401) {
+                options.onUnauthorized?.()
+              }
+              rejectOnce(new ApiRequestError(body.msg || `请求失败：${body.code}`, body.code))
+              return
+            }
+            resolveOnce(body.data)
+            return
+          }
+          resolveOnce(body as T)
           return
         }
 
-        const body = response.data as ApiErrorBody | undefined
+        const errorBody = body as ApiErrorBody | undefined
         const message =
           response.statusCode === 403 && options.forbiddenMessage
             ? options.forbiddenMessage
-            : body?.msg || body?.error || `请求失败：${response.statusCode}`
+            : errorBody?.msg || errorBody?.error || `请求失败：${response.statusCode}`
         if (response.statusCode === 401) {
           options.onUnauthorized?.()
         }
