@@ -8,6 +8,7 @@ import { ApiRequestError } from '@/services/http'
 import { addSearchHistory } from '@/utils/storage'
 import { ensureUserSession, openProtectedPage } from '@/services/auth'
 import { usePageAnalytics } from '@/composables/usePageAnalytics'
+import { usePageShare } from '@/composables/usePageShare'
 import { usePageTheme } from '@/composables/useTheme'
 import { trackAnalyticsEvent } from '@/services/analytics'
 import type { Book } from '@/types/novel'
@@ -30,6 +31,11 @@ const bookColumns = computed(() => [
 ])
 const { themeClass } = usePageTheme()
 usePageAnalytics('search')
+usePageShare(() =>
+  query.value
+    ? `/pages/search/search?q=${encodeURIComponent(query.value)}`
+    : '/pages/search/search'
+)
 
 function readDisplayMode(): 'list' | 'grid' {
   return uni.getStorageSync(DISPLAY_MODE_STORAGE_KEY) === 'list' ? 'list' : 'grid'

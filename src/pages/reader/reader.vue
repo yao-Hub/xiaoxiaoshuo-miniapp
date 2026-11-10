@@ -11,6 +11,7 @@ import ReaderSettingsSheet from '@/components/reader/ReaderSettingsSheet.vue'
 import ReaderTopBar from '@/components/reader/ReaderTopBar.vue'
 import { useAudiobook } from '@/composables/useAudiobook'
 import { usePageAnalytics } from '@/composables/usePageAnalytics'
+import { usePageShare } from '@/composables/usePageShare'
 import { useReaderCatalog } from '@/composables/useReaderCatalog'
 import { useReaderEngine } from '@/composables/useReaderEngine'
 import { useReaderViewport } from '@/composables/useReaderViewport'
@@ -157,6 +158,14 @@ const {
   clearChapterPreview,
   resolveChapterAt
 } = readerCatalog
+
+usePageShare(() => {
+  const targetChapterUrl = chapterUrl.value || requestedChapterUrl.value
+  if (!targetChapterUrl) {
+    return '/pages/index/index'
+  }
+  return `/pages/reader/reader?chapterUrl=${encodeURIComponent(targetChapterUrl)}&catalogUrl=${encodeURIComponent(effectiveCatalogUrl.value)}&bookTitle=${encodeURIComponent(bookTitle.value)}&coverUrl=${encodeURIComponent(bookCoverUrl.value || routeCoverUrl.value)}`
+})
 
 watch(
   bookCoverUrl,

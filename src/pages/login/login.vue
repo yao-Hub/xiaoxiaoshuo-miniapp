@@ -5,6 +5,7 @@ import GlobalAudiobookPlayer from '@/components/audiobook/GlobalAudiobookPlayer.
 import { ensureUserSession } from '@/services/auth'
 import { usePageAnalytics } from '@/composables/usePageAnalytics'
 import { useAudiobook } from '@/composables/useAudiobook'
+import { usePageShare } from '@/composables/usePageShare'
 import { usePageTheme, useTheme } from '@/composables/useTheme'
 import { syncUserDataFromServer } from '@/services/user-data-sync'
 
@@ -13,6 +14,7 @@ const errorMessage = ref('')
 const redirectUrl = ref('')
 const { themeClass } = usePageTheme()
 usePageAnalytics('login')
+usePageShare()
 
 onLoad((options) => {
   redirectUrl.value = decodeURIComponent(String(options?.redirect || ''))

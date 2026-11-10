@@ -17,6 +17,7 @@ import type { ReadingHistoryItem } from '@/types/novel'
 import { ensureUserSession, openProtectedPage } from '@/services/auth'
 import { trackAnalyticsEvent } from '@/services/analytics'
 import { usePageAnalytics } from '@/composables/usePageAnalytics'
+import { usePageShare } from '@/composables/usePageShare'
 import { useTabBarTheme } from '@/composables/useTabBarTheme'
 import { syncUserDataFromServer } from '@/services/user-data-sync'
 
@@ -28,6 +29,7 @@ const selectedReadingKeys = ref<string[]>([])
 const selectedSearches = ref<string[]>([])
 const { themeClass } = useTabBarTheme(1)
 usePageAnalytics('history')
+usePageShare()
 const currentItemCount = computed(() =>
   activeTab.value === 'reading' ? readingHistory.value.length : searchHistory.value.length
 )

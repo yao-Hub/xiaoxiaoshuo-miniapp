@@ -12,6 +12,7 @@ import { ensureUserSession, openProtectedPage } from '@/services/auth'
 import { trackAnalyticsEvent } from '@/services/analytics'
 import type { ReadingHistoryItem } from '@/types/novel'
 import { usePageAnalytics } from '@/composables/usePageAnalytics'
+import { usePageShare } from '@/composables/usePageShare'
 import { useTabBarTheme } from '@/composables/useTabBarTheme'
 import { syncUserDataFromServer } from '@/services/user-data-sync'
 
@@ -22,6 +23,7 @@ const suggestions = ['完美世界', '盘龙', '斗破苍穹', '遮天']
 const MAX_RECENT_SEARCHES = 4
 const { themeClass } = useTabBarTheme(0)
 usePageAnalytics('index')
+usePageShare()
 
 onShow(async () => {
   try {

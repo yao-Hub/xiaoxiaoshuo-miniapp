@@ -14,6 +14,7 @@ import {
   type SessionUser
 } from '@/services/auth'
 import { usePageAnalytics } from '@/composables/usePageAnalytics'
+import { usePageShare } from '@/composables/usePageShare'
 import { useTabBarTheme } from '@/composables/useTabBarTheme'
 
 const user = ref<SessionUser | undefined>(getCachedUser())
@@ -24,6 +25,7 @@ const nicknameDraft = ref('')
 const nicknameSaving = ref(false)
 const { themeClass, resolvedTheme, toggleResolvedTheme } = useTabBarTheme(2)
 usePageAnalytics('profile')
+usePageShare()
 const themeIconPath = computed(() =>
   resolvedTheme.value === 'dark'
     ? '/static/icons/theme-sun-light.svg'

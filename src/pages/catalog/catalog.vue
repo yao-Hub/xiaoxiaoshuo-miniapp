@@ -4,6 +4,7 @@ import { onLoad, onPageScroll } from '@dcloudio/uni-app'
 import GlobalAudiobookPlayer from '@/components/audiobook/GlobalAudiobookPlayer.vue'
 import { getCatalog } from '@/services/novel'
 import { usePageAnalytics } from '@/composables/usePageAnalytics'
+import { usePageShare } from '@/composables/usePageShare'
 import { usePageTheme } from '@/composables/useTheme'
 import { trackAnalyticsEvent } from '@/services/analytics'
 import type { Book, Chapter } from '@/types/novel'
@@ -20,6 +21,10 @@ const coverFailed = ref(false)
 const showBackToTop = ref(false)
 const { themeClass } = usePageTheme()
 usePageAnalytics('catalog')
+usePageShare(
+  () =>
+    `/pages/catalog/catalog?url=${encodeURIComponent(catalogUrl.value)}&title=${encodeURIComponent(book.value?.title || initialTitle.value)}&coverUrl=${encodeURIComponent(book.value?.coverUrl || initialCoverUrl.value)}`
+)
 
 const visibleChapters = computed(() =>
   ascending.value ? chapters.value : [...chapters.value].reverse()
