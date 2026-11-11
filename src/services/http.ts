@@ -67,6 +67,7 @@ export function createRequestCancellation(): RequestCancellation {
 interface RequestOptions {
   method?: 'GET' | 'POST'
   data?: Record<string, unknown>
+  header?: Record<string, string>
   token?: string
   timeout?: number
   forbiddenMessage?: string
@@ -144,6 +145,7 @@ export function requestJson<T>(path: string, options: RequestOptions = {}) {
       data: method === 'POST' ? options.data || {} : options.data,
       header: {
         'content-type': 'application/json',
+        ...(options.header || {}),
         ...(options.token ? { Authorization: `Bearer ${options.token}` } : {})
       },
       timeout: options.timeout || 30000,

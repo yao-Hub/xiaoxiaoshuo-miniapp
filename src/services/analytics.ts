@@ -61,6 +61,7 @@ export function trackAnalyticsEvent(
       value: input.value || 0,
       metadata: input.metadata || {}
     },
+    header: { 'X-Platform': 'miniapp' },
     token,
     timeout: 5000,
     showLoading: false
