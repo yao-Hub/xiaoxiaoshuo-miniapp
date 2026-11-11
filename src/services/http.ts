@@ -145,6 +145,7 @@ export function requestJson<T>(path: string, options: RequestOptions = {}) {
       data: method === 'POST' ? options.data || {} : options.data,
       header: {
         'content-type': 'application/json',
+        'X-Platform': 'miniapp',
         ...(options.header || {}),
         ...(options.token ? { Authorization: `Bearer ${options.token}` } : {})
       },
