@@ -54,9 +54,6 @@ const usernameText = computed(() => {
   if (user.value?.displayName) {
     return user.value.displayName
   }
-  if (user.value?.publicId) {
-    return `微信用户 ${user.value.publicId.slice(-4).toUpperCase()}`
-  }
   return loggedIn.value ? '账号加载中' : '未登录'
 })
 const avatarText = computed(() => usernameText.value.slice(0, 1))
